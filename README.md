@@ -1,5 +1,5 @@
 # Neon Runner (Three.js + PlayCanvas)
-#Test
+
 Browser-based neon endless runner. The 3D world (track, neon obstacles, skyline, lights, fog) is rendered with **PlayCanvas Engine 2.x**, while the **player avatar** is rendered with **Three.js** on a transparent canvas overlay above. Both engines share an engine-agnostic camera state for perfect lockstep.
 
 ## Run Locally
