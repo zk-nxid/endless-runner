@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.production.local
+
+# Supabase CLI (optional; may contain project ref)
+.branches
+.temp

@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Neon Runner</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/",
+          "playcanvas": "https://cdn.jsdelivr.net/npm/playcanvas@2/+esm",
+          "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/+esm"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="world-canvas" aria-hidden="true"></canvas>
+      <canvas id="game-canvas" aria-label="Player avatar overlay"></canvas>
+
+      <div id="fx-layer" aria-hidden="true">
+        <div id="fx-scanlines" class="fx-scanlines"></div>
+        <div id="fx-vignette" class="fx-vignette"></div>
+        <div id="fx-grain" class="fx-grain"></div>
+        <div id="fx-aberration" class="fx-aberration"></div>
+        <div id="fx-flash" class="fx-flash"></div>
+        <div id="fx-impact" class="fx-impact"></div>
+      </div>
+
+      <div id="ui-layer">
+        <section id="menu-screen" class="screen visible">
+          <div class="menu-grid" aria-hidden="true"></div>
+          <button id="menu-account-corner" class="corner-account corner-icon corner-before-settings" type="button" aria-label="Account">
+            <span id="menu-account-icon" class="corner-account-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4Zm0 2c-3.3 0-6 1.65-6 3.6V21h12v-3.4c0-1.95-2.7-3.6-6-3.6Z" fill="currentColor"/>
+              </svg>
+            </span>
+            <span id="menu-account-label" class="corner-account-label hidden" aria-hidden="true"></span>
+          </button>
+          <button id="menu-settings-button" class="corner-icon" type="button" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M19.43 12.98a7.94 7.94 0 0 0 .05-.98 7.94 7.94 0 0 0-.05-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.74 7.74 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65a7.74 7.74 0 0 0-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.06.65-.06.98s.02.66.06.98L2.45 14.63a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.09.73 1.69.98l.38 2.65A.5.5 0 0 0 10 22h4a.5.5 0 0 0 .5-.42l.38-2.65c.6-.25 1.17-.58 1.69-.98l2.49 1a.5.5 0 0 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z" fill="currentColor"/>
+            </svg>
+          </button>
+          <div class="menu-coins" aria-label="Coins">
+            <span class="coin-icon" aria-hidden="true">◇</span>
+            <span id="menu-coin-value" class="coin-amount">0</span>
+          </div>
+          <p class="eyebrow">internet-native runner</p>
+          <h1 class="title-glitch" data-text="Neon Runner">Neon Runner</h1>
+          <p class="menu-sub">Lanes: A / D or Arrow Keys &nbsp;&middot;&nbsp; Jump: Space / W / Up &nbsp;&middot;&nbsp; Mobile: swipe</p>
+          <div class="menu-actions">
+            <button id="start-button" class="cta">
+              <span class="cta-label">Start Run</span>
+              <span class="cta-glow" aria-hidden="true"></span>
+            </button>
+            <button id="shop-button" class="menu-secondary" type="button">Shop</button>
+          </div>
+          <p class="menu-prompt">// PRESS START</p>
+        </section>
+
+        <section id="hud" class="hud hidden">
+          <button id="pause-button" class="corner-icon" aria-label="Pause" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/>
+              <rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/>
+            </svg>
+          </button>
+          <header class="hud-header">
+            <span class="hud-tag">NEON</span>
+            <span class="hud-divider">//</span>
+            <span class="hud-tag dim">RUN</span>
+            <span class="hud-pulse" aria-hidden="true"></span>
+          </header>
+          <div class="hud-row">
+            <div class="hud-block hud-score">
+              <span class="hud-bracket">[</span>
+              <div class="hud-stat">
+                <span class="hud-label">score</span>
+                <span id="score-value" class="hud-value">0</span>
+              </div>
+              <span class="hud-bracket">]</span>
+            </div>
+            <div class="hud-block hud-velocity">
+              <span class="hud-bracket">[</span>
+              <div class="hud-stat">
+                <span class="hud-label">velocity</span>
+                <span id="speed-value" class="hud-value">0.0</span>
+              </div>
+              <span class="hud-bracket">]</span>
+            </div>
+            <div class="hud-block hud-coins">
+              <span class="hud-bracket">[</span>
+              <div class="hud-stat">
+                <span class="hud-label">coins</span>
+                <span id="coin-value" class="hud-value">0</span>
+              </div>
+              <span class="hud-bracket">]</span>
+            </div>
+          </div>
+          <div id="score-popups" class="score-popups" aria-hidden="true"></div>
+        </section>
+
+        <section id="gameover-screen" class="screen hidden">
+          <div class="end-vignette" aria-hidden="true"></div>
+          <button id="end-account-corner" class="corner-account corner-icon corner-before-settings" type="button" aria-label="Account">
+            <span id="end-account-icon" class="corner-account-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M12 12c2.2 0 4-1.8 4-4s-1.8-4-4-4-4 1.8-4 4 1.8 4 4 4Zm0 2c-3.3 0-6 1.65-6 3.6V21h12v-3.4c0-1.95-2.7-3.6-6-3.6Z" fill="currentColor"/>
+              </svg>
+            </span>
+            <span id="end-account-label" class="corner-account-label hidden" aria-hidden="true"></span>
+          </button>
+          <button id="end-settings-button" class="corner-icon" type="button" aria-label="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M19.43 12.98a7.94 7.94 0 0 0 .05-.98 7.94 7.94 0 0 0-.05-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.74 7.74 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65a7.74 7.74 0 0 0-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.06.65-.06.98s.02.66.06.98L2.45 14.63a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.09.73 1.69.98l.38 2.65A.5.5 0 0 0 10 22h4a.5.5 0 0 0 .5-.42l.38-2.65c.6-.25 1.17-.58 1.69-.98l2.49 1a.5.5 0 0 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64ZM12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5Z" fill="currentColor"/>
+            </svg>
+          </button>
+          <p class="eyebrow danger">// signal lost</p>
+          <h2 class="end-title">Run Closed</h2>
+          <p class="end-score-line">Final Score: <span id="final-score" class="end-score">0</span></p>
+          <p id="end-coins-line" class="end-coins-line">
+            <span class="coin-icon" aria-hidden="true">◇</span>
+            <span class="end-coins-earned">+<span id="end-coins-earned">0</span> coins</span>
+            <span class="end-coins-total">total <span id="end-coins-total">0</span></span>
+          </p>
+          <label for="player-name">Runner Name</label>
+          <input id="player-name" type="text" maxlength="18" placeholder="Enter your handle" autocomplete="off" />
+          <div class="end-actions">
+            <button id="submit-score-button">Log Score</button>
+            <button id="end-menu-button">Main Menu</button>
+            <button id="retry-button" class="cta">
+              <span class="cta-label">Retry Run</span>
+              <span class="cta-glow" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div id="leaderboard-list"></div>
+        </section>
+
+        <section id="pause-screen" class="screen modal hidden">
+          <h2 class="end-title">Paused</h2>
+          <div class="settings-row">
+            <label for="pause-volume">Volume</label>
+            <input id="pause-volume" type="range" min="0" max="100" step="1" />
+            <span id="pause-volume-value" class="volume-value">--</span>
+          </div>
+          <div class="end-actions">
+            <button id="resume-button" class="cta">
+              <span class="cta-label">Resume</span>
+              <span class="cta-glow" aria-hidden="true"></span>
+            </button>
+            <button id="quit-button">Quit to Menu</button>
+          </div>
+        </section>
+
+        <section id="countdown-screen" class="screen modal hidden countdown-overlay">
+          <div id="countdown-value" class="countdown-value">3</div>
+        </section>
+
+        <section id="settings-screen" class="screen modal hidden">
+          <h2 class="end-title">Settings</h2>
+          <div class="settings-row">
+            <label for="settings-volume">Volume</label>
+            <input id="settings-volume" type="range" min="0" max="100" step="1" />
+            <span id="settings-volume-value" class="volume-value">--</span>
+          </div>
+          <div class="end-actions">
+            <button id="settings-close" class="cta">
+              <span class="cta-label">Close</span>
+              <span class="cta-glow" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+
+        <section id="auth-screen" class="screen modal hidden" aria-labelledby="auth-title">
+          <h2 id="auth-title" class="end-title">Account</h2>
+          <p id="auth-config-hint" class="auth-hint hidden">
+            Add your Supabase <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to
+            <code>.env.local</code>, save, restart Vite — or set <code>window.__NR_SUPABASE__</code> when not using
+            Vite. Shop progress stays on this device only.
+          </p>
+          <div id="auth-signed-in-panel" class="auth-panel hidden">
+            <div id="auth-signed-profile" class="auth-signed-profile">
+              <div class="auth-identity-row">
+                <span class="auth-identity-label" id="auth-signed-contact-label">Email</span>
+                <span class="auth-identity-value" id="auth-signed-contact"></span>
+              </div>
+              <div class="auth-identity-row">
+                <span class="auth-identity-label">Username</span>
+                <span class="auth-identity-value" id="auth-signed-username"></span>
+              </div>
+            </div>
+            <p id="auth-signed-feedback" class="auth-signed-feedback" aria-live="polite"></p>
+            <div id="auth-signed-in-actions" class="auth-signed-actions">
+              <button type="button" id="auth-open-password" class="auth-secondary-action">Change password</button>
+              <button type="button" id="auth-open-username" class="auth-secondary-action">Change username</button>
+            </div>
+            <div id="auth-edit-username-panel" class="auth-edit-panel hidden">
+              <label class="auth-field">
+                New username
+                <input id="auth-new-username" type="text" maxlength="32" autocomplete="nickname" />
+              </label>
+              <div class="auth-edit-actions">
+                <button type="button" id="auth-save-username" class="cta">
+                  <span class="cta-label">Save name</span>
+                  <span class="cta-glow" aria-hidden="true"></span>
+                </button>
+                <button type="button" id="auth-cancel-username">Cancel</button>
+              </div>
+            </div>
+            <div id="auth-edit-password-panel" class="auth-edit-panel hidden">
+              <label class="auth-field">
+                New password
+                <input id="auth-new-password" type="password" autocomplete="new-password" />
+              </label>
+              <label class="auth-field">
+                Confirm password
+                <input id="auth-confirm-password" type="password" autocomplete="new-password" />
+              </label>
+              <div class="auth-edit-actions">
+                <button type="button" id="auth-save-password" class="cta">
+                  <span class="cta-label">Update password</span>
+                  <span class="cta-glow" aria-hidden="true"></span>
+                </button>
+                <button type="button" id="auth-cancel-password">Cancel</button>
+              </div>
+            </div>
+            <div class="end-actions auth-signed-footer">
+              <button id="auth-sign-out-button" type="button" class="cta">
+                <span class="cta-label">Sign out</span>
+                <span class="cta-glow" aria-hidden="true"></span>
+              </button>
+              <button id="auth-close-signed" type="button">Close</button>
+            </div>
+          </div>
+          <div id="auth-forms-panel" class="auth-panel">
+            <div class="auth-tabs" role="tablist" aria-label="Account mode">
+              <button type="button" id="auth-tab-signin" class="auth-tab active" role="tab" aria-selected="true">
+                Sign in
+              </button>
+              <button type="button" id="auth-tab-signup" class="auth-tab" role="tab" aria-selected="false">
+                Create account
+              </button>
+            </div>
+            <label class="auth-field">
+              Email
+              <input id="auth-email" type="email" autocomplete="username" />
+            </label>
+            <label id="auth-display-name-row" class="auth-field hidden">
+              Username
+              <input id="auth-display-name" type="text" autocomplete="nickname" maxlength="32" />
+            </label>
+            <label class="auth-field">
+              Password
+              <input id="auth-password" type="password" autocomplete="current-password" />
+            </label>
+            <p id="auth-error" class="auth-error" aria-live="polite"></p>
+            <div class="end-actions">
+              <button id="auth-submit" type="button" class="cta">
+                <span class="cta-label" id="auth-submit-label">Sign in</span>
+                <span class="cta-glow" aria-hidden="true"></span>
+              </button>
+              <button id="auth-close" type="button">Close</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="shop-screen" class="screen modal hidden">
+          <header class="shop-header">
+            <h2 class="end-title">Shop</h2>
+            <div class="shop-coins">
+              <span class="coin-icon" aria-hidden="true">◇</span>
+              <span id="shop-coin-value" class="coin-amount">0</span>
+            </div>
+          </header>
+          <div class="shop-body">
+            <div class="shop-tabs" role="tablist" aria-label="Shop category">
+              <button
+                type="button"
+                id="shop-tab-skins"
+                class="shop-tab active"
+                role="tab"
+                aria-controls="shop-panel-skins"
+                aria-selected="true"
+              >
+                Skins
+              </button>
+              <button
+                type="button"
+                id="shop-tab-trails"
+                class="shop-tab"
+                role="tab"
+                aria-controls="shop-panel-trails"
+                aria-selected="false"
+              >
+                Trails
+              </button>
+            </div>
+            <div class="shop-panels">
+              <div
+                id="shop-panel-skins"
+                class="shop-panel active"
+                role="tabpanel"
+                aria-labelledby="shop-tab-skins"
+              >
+                <div id="shop-grid-skins" class="shop-grid" role="list"></div>
+              </div>
+              <div
+                id="shop-panel-trails"
+                class="shop-panel"
+                role="tabpanel"
+                aria-labelledby="shop-tab-trails"
+                hidden
+              >
+                <div id="shop-grid-trails" class="shop-grid" role="list"></div>
+              </div>
+            </div>
+          </div>
+          <div id="shop-confirm-panel" class="shop-confirm-panel hidden" aria-live="polite">
+            <p id="shop-confirm-text" class="shop-confirm-text"></p>
+            <div class="shop-confirm-actions">
+              <button id="shop-confirm-cancel" type="button">Cancel</button>
+              <button id="shop-confirm-yes" type="button" class="cta">
+                <span class="cta-label">Confirm purchase</span>
+                <span class="cta-glow" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <div class="end-actions">
+            <button id="shop-close" class="cta">
+              <span class="cta-label">Close</span>
+              <span class="cta-glow" aria-hidden="true"></span>
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <aside id="powered-by-strip" class="powered-by" aria-label="Powered by ITX">
+        <span class="powered-by-text">Powered by</span>
+        <img
+          src="./branding/itx-logo.png"
+          alt="ITX"
+          class="powered-by-logo"
+          width="88"
+          height="32"
+          decoding="async"
+        />
+      </aside>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
