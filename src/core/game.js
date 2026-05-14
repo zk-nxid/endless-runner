@@ -55,7 +55,9 @@ export class Game {
       premultipliedAlpha: false,
       powerPreference: "high-performance",
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
+    this.renderer.setPixelRatio(
+      typeof window.devicePixelRatio === "number" ? Math.min(window.devicePixelRatio, 2) : 1
+    );
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.92;
@@ -117,6 +119,16 @@ export class Game {
     this.#bindUi();
     this.#onResize();
     window.addEventListener("resize", () => this.#onResize());
+    window.addEventListener("orientationchange", () => this.#onResize());
+    if (typeof ResizeObserver !== "undefined") {
+      this._resizeObserver = new ResizeObserver(() => this.#onResize());
+      this._resizeObserver.observe(this.worldCanvas);
+    }
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", () => this.#onResize());
+      vv.addEventListener("scroll", () => this.#onResize());
+    }
     this.ui.renderState(this.state);
     this.refreshAuthUi();
   }
@@ -1069,9 +1081,21 @@ export class Game {
     }
   }
 
+  #canvasViewportPx() {
+    const el = this.worldCanvas;
+    let w = Math.floor(el.clientWidth);
+    let h = Math.floor(el.clientHeight);
+    if (w < 2 || h < 2) {
+      w = Math.max(1, Math.floor(window.innerWidth));
+      h = Math.max(1, Math.floor(window.innerHeight));
+    }
+    return { width: Math.max(1, w), height: Math.max(1, h) };
+  }
+
   #onResize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const { width: w, height: h } = this.#canvasViewportPx();
+    const prCap = typeof window.devicePixelRatio === "number" ? Math.min(window.devicePixelRatio, 2) : 1;
+    this.renderer.setPixelRatio(prCap);
     this.renderer.setSize(w, h, false);
     this.cameraSystem.setAspect(w / h);
     this.cameraSystem.applyToThree(this.camera);

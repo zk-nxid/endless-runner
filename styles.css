@@ -15,11 +15,29 @@
   box-sizing: border-box;
 }
 
-html,
-body,
-#app {
+html {
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body {
   width: 100%;
   height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  overflow: hidden;
+  /* Avoid horizontal rubber-banding leaking past the neon frame on mobile. */
+  overscroll-behavior-x: none;
+}
+
+#app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   overflow: hidden;
 }
@@ -188,10 +206,19 @@ body,
 .screen {
   position: absolute;
   inset: 0;
+  box-sizing: border-box;
   display: grid;
   place-content: center;
   gap: 0.8rem;
   text-align: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
   background:
     radial-gradient(circle at 38% 18%, rgba(255, 91, 183, 0.22), transparent 55%),
     radial-gradient(circle at 75% 80%, rgba(81, 217, 255, 0.18), transparent 60%),
@@ -385,17 +412,17 @@ button:hover {
 
 .hud-header {
   position: absolute;
-  top: 1rem;
+  top: max(0.65rem, env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.32rem 0.9rem;
+  gap: clamp(0.35rem, 0.25rem + 0.6vw, 0.55rem);
+  padding: clamp(0.22rem, 0.18rem + 0.35vw, 0.32rem) clamp(0.55rem, 0.42rem + 0.65vw, 0.9rem);
   background: var(--hud-bg);
   border: 1px solid rgba(255, 91, 183, 0.45);
   border-radius: 2px;
-  font-size: 0.72rem;
+  font-size: clamp(0.62rem, 0.56rem + 0.28vw, 0.72rem);
   backdrop-filter: blur(2px);
 }
 
@@ -429,26 +456,26 @@ button:hover {
 
 .hud-row {
   position: absolute;
-  top: 1rem;
-  left: 1.2rem;
+  top: max(0.65rem, env(safe-area-inset-top, 0px));
+  left: max(0.85rem, calc(env(safe-area-inset-left, 0px) + 0.45rem));
   display: grid;
-  gap: 0.5rem;
+  gap: clamp(0.35rem, 0.25rem + 0.55vw, 0.5rem);
 }
 
 .hud-block {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.55rem;
+  gap: clamp(0.28rem, 0.2rem + 0.35vw, 0.4rem);
+  padding: clamp(0.2rem, 0.16rem + 0.25vw, 0.3rem) clamp(0.42rem, 0.32rem + 0.45vw, 0.55rem);
   background: var(--hud-bg);
   border-left: 2px solid var(--neon-magenta);
   border-right: 2px solid var(--neon-cyan);
-  font-size: 0.78rem;
+  font-size: clamp(0.68rem, 0.62rem + 0.28vw, 0.78rem);
 }
 
 .hud-bracket {
   font-weight: 600;
-  font-size: 1.05rem;
+  font-size: clamp(0.88rem, 0.78rem + 0.45vw, 1.05rem);
   color: var(--neon-cyan);
   opacity: 0.85;
 }
@@ -458,17 +485,17 @@ button:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.05rem;
-  min-width: 5.4rem;
+  min-width: clamp(4rem, 2.8rem + 2.4vw, 5.4rem);
 }
 
 .hud-label {
-  font-size: 0.62rem;
-  letter-spacing: 0.32em;
+  font-size: clamp(0.54rem, 0.48rem + 0.22vw, 0.62rem);
+  letter-spacing: clamp(0.18em, 0.14em + 0.35vw, 0.32em);
   color: rgba(255, 220, 240, 0.66);
 }
 
 .hud-value {
-  font-size: 1.05rem;
+  font-size: clamp(0.85rem, 0.74rem + 0.55vw, 1.05rem);
   font-weight: 700;
   color: #fff;
   text-shadow: 0 0 10px rgba(255, 245, 220, 0.6);
@@ -702,10 +729,13 @@ button:hover {
 
 .settings-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.75rem;
   justify-content: center;
   margin: 0.6rem 0;
+  max-width: min(26rem, 100%);
+  margin-inline: auto;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   font-size: 0.78rem;
@@ -720,7 +750,10 @@ button:hover {
 .settings-row input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  width: 14rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: min(14rem, 72vw);
+  max-width: 100%;
   height: 4px;
   background: linear-gradient(90deg, rgba(255, 91, 183, 0.55), rgba(81, 217, 255, 0.55));
   border-radius: 2px;
@@ -1065,6 +1098,7 @@ button:hover {
 
 .shop-panels {
   max-height: min(52vh, 420px);
+  max-height: min(50dvh, 420px);
   overflow-y: auto;
   padding-right: 0.15rem;
   scrollbar-gutter: stable;
@@ -1414,5 +1448,279 @@ button:hover {
     opacity: 1;
     text-shadow: 0 0 14px rgba(255, 230, 120, 0.95), 0 0 26px rgba(255, 91, 183, 0.35);
     filter: brightness(1.08);
+  }
+}
+
+/* ---------- Mobile / small viewports ---------- */
+@media (max-width: 1024px), (max-width: 1100px) and (max-height: 560px) {
+  .hud {
+    letter-spacing: clamp(0.1em, 0.08em + 0.15vw, 0.22em);
+  }
+
+  .hud-header {
+    top: max(0.35rem, env(safe-area-inset-top, 0px));
+    padding: 0.18rem 0.48rem;
+    font-size: clamp(0.54rem, 0.5rem + 0.35vw, 0.62rem);
+    gap: 0.28rem;
+    background: rgba(10, 6, 18, 0.38);
+    border-color: rgba(255, 91, 183, 0.32);
+    backdrop-filter: blur(4px);
+  }
+
+  .hud-pulse {
+    width: 5px;
+    height: 5px;
+  }
+
+  /* Bottom strip: 3-column grid — slim footprint, no clash with NEON bar */
+  .hud-row {
+    top: auto;
+    bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+    left: max(0.4rem, env(safe-area-inset-left, 0px));
+    right: max(0.4rem, env(safe-area-inset-right, 0px));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: clamp(0.18rem, 0.12rem + 1vw, 0.32rem);
+    align-items: stretch;
+    width: auto;
+  }
+
+  .hud-block {
+    min-width: 0;
+    padding: 0.14rem 0.26rem;
+    font-size: clamp(0.52rem, 0.48rem + 0.35vw, 0.58rem);
+    gap: 0.18rem;
+    background: rgba(10, 6, 18, 0.38);
+    border-left-width: 1px;
+    border-right-width: 1px;
+    border-left-color: rgba(255, 91, 183, 0.55);
+    border-right-color: rgba(81, 217, 255, 0.45);
+    backdrop-filter: blur(4px);
+  }
+
+  .hud-bracket {
+    font-size: clamp(0.68rem, 0.62rem + 0.5vw, 0.78rem);
+  }
+
+  .hud-label {
+    font-size: clamp(0.42rem, 0.38rem + 0.35vw, 0.5rem);
+    letter-spacing: 0.14em;
+  }
+
+  .hud-value {
+    font-size: clamp(0.62rem, 0.56rem + 0.55vw, 0.72rem);
+  }
+
+  .hud-stat {
+    min-width: 0;
+    gap: 0;
+  }
+
+  .score-popup {
+    font-size: 0.95rem;
+    letter-spacing: 0.12em;
+  }
+
+  .score-popup-danger {
+    font-size: 1.1rem;
+  }
+
+  /* Bottom stats strip sits here; lift ITX branding so it stays readable mid-run */
+  #app:has(#hud:not(.hidden)) .powered-by {
+    bottom: max(6.75rem, calc(env(safe-area-inset-bottom, 0px) + 5.75rem));
+    right: max(0.45rem, env(safe-area-inset-right, 0px));
+  }
+
+  .corner-icon {
+    top: max(0.35rem, env(safe-area-inset-top, 0px));
+  }
+
+  #menu-settings-button,
+  #end-settings-button {
+    right: max(0.45rem, env(safe-area-inset-right, 0px));
+  }
+
+  .corner-before-settings {
+    right: calc(max(0.45rem, env(safe-area-inset-right, 0px)) + 38px + 8px);
+  }
+
+  #pause-button {
+    right: max(0.45rem, env(safe-area-inset-right, 0px));
+  }
+
+  .menu-coins {
+    top: max(0.35rem, env(safe-area-inset-top, 0px));
+    left: max(0.45rem, env(safe-area-inset-left, 0px));
+    padding: 0.25rem 0.45rem;
+    font-size: 0.68rem;
+    gap: 0.3rem;
+  }
+
+  .menu-coins .coin-icon {
+    font-size: 0.82rem;
+  }
+
+  #ui-layer button:not(.corner-icon):not(.cta):not(.menu-secondary):not(.auth-tab),
+  #ui-layer input:not([type="range"]) {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    min-height: 44px;
+  }
+
+  #ui-layer button.cta:not(.corner-icon) {
+    padding: 0.52rem 1rem;
+    font-size: 0.78rem;
+    min-height: 44px;
+  }
+
+  #ui-layer button.menu-secondary:not(.corner-icon) {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.72rem;
+    min-height: 44px;
+  }
+
+  #ui-layer button.auth-secondary-action {
+    padding: 0.42rem 0.7rem;
+    font-size: 0.68rem;
+    min-height: 44px;
+  }
+
+  #ui-layer button.auth-tab {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.62rem;
+    min-height: 44px;
+  }
+
+  .menu-actions,
+  .end-actions {
+    flex-direction: column;
+    width: 100%;
+    max-width: min(20rem, 100%);
+    margin-inline: auto;
+    gap: 0.45rem;
+    align-items: stretch;
+  }
+
+  .menu-actions button,
+  .end-actions button {
+    width: 100%;
+  }
+
+  .shop-confirm-actions {
+    flex-direction: column;
+    width: 100%;
+    max-width: min(20rem, 100%);
+    margin-inline: auto;
+    align-items: stretch;
+  }
+
+  .shop-confirm-actions .cta,
+  .shop-confirm-actions button {
+    width: 100%;
+  }
+
+  .shop-confirm-actions .cta {
+    padding: 0.52rem 1rem;
+    font-size: 0.78rem;
+  }
+
+  .screen {
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .end-title {
+    font-size: clamp(1.35rem, 7vw, 2.2rem);
+  }
+
+  .end-score-line {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    padding-inline: 0.25rem;
+  }
+
+  .end-score {
+    font-size: clamp(1rem, 6vw, 1.25rem);
+  }
+
+  .end-coins-line {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    gap: 0.35rem 0.5rem;
+  }
+
+  .end-coins-line .coin-icon {
+    font-size: 0.82rem;
+  }
+
+  .end-coins-total {
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+  }
+
+  #leaderboard-list {
+    width: 100%;
+    max-width: min(360px, 100%);
+    margin-inline: auto;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    justify-items: stretch;
+  }
+
+  .leaderboard-row {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.35;
+    text-align: left;
+  }
+
+  #ui-layer #gameover-screen .end-actions {
+    gap: 0.32rem;
+    max-width: min(17.5rem, 100%);
+  }
+
+  #ui-layer #gameover-screen .end-actions button {
+    padding: 0.32rem 0.65rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    min-height: 38px;
+  }
+
+  #ui-layer #gameover-screen .end-actions .cta {
+    padding: 0.38rem 0.75rem;
+    font-size: 0.7rem;
+    min-height: 38px;
+  }
+
+  #ui-layer #gameover-screen #leaderboard-list {
+    margin-top: 0.55rem;
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
+    gap: 0.18rem;
+    max-width: min(320px, 100%);
+  }
+
+  #ui-layer #gameover-screen .leaderboard-row {
+    line-height: 1.28;
+    font-size: 0.58rem;
+  }
+
+  #player-name {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .menu-sub {
+    font-size: 0.65rem;
+    padding-inline: 0.25rem;
+    line-height: 1.4;
+  }
+
+  .menu-prompt {
+    font-size: 0.72rem;
+    letter-spacing: 0.2em;
   }
 }

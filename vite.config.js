@@ -10,6 +10,8 @@ export default defineConfig({
   // Relative URLs so the built site works from subpaths (e.g. GitHub Pages `…/repo/`)
   // and avoids `/assets/…` 404s when the app is not hosted at the domain root.
   base: "./",
+  // Match Next.js-style `NEXT_PUBLIC_*` names from Supabase dashboard snippets alongside `VITE_*`.
+  envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   server: {
     port: DEV_PORT,
     strictPort: true,
@@ -26,5 +28,7 @@ export default defineConfig({
     target: "es2020",
     outDir: "dist",
     sourcemap: true,
+    // Main bundle includes Three + PlayCanvas + Supabase; over default 500 kB threshold.
+    chunkSizeWarningLimit: 3500,
   },
 });

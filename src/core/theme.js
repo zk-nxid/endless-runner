@@ -1,8 +1,8 @@
 const THEMES = {
   retroNeon: {
     palette: {
-      sceneBackground: 0x100914,
-      fogColor: 0x261a2f,
+      sceneBackground: 0x070714,
+      fogColor: 0x12182a,
       groundColor: 0x1b1322,
       laneLightColor: 0xff5bb7,
       laneGhostColor: 0x51d9ff,
@@ -14,8 +14,8 @@ const THEMES = {
       accentLightA: 0xff5bb7,
       accentLightB: 0x51d9ff,
       // Soft "light" palette targets (used during 15s palette fade)
-      lightSceneBackground: 0xc6b89a,
-      lightFogColor: 0xc8b88a,
+      lightSceneBackground: 0xc0cad6,
+      lightFogColor: 0xc2cad6,
       lightGroundColor: 0xd6c8a4,
       lightObstacleBase: 0xc8a878,
       lightObstacleAccent: 0xb8d8a8,
@@ -33,7 +33,7 @@ const THEMES = {
     },
     fog: {
       near: 32,
-      far: 170,
+      far: 188,
       pulseFarOffset: 0,
     },
     uiMotion: {
@@ -51,8 +51,8 @@ const THEMES = {
   },
   dreamcore: {
     palette: {
-      sceneBackground: 0x090b14,
-      fogColor: 0x171c2b,
+      sceneBackground: 0x050816,
+      fogColor: 0x0e1428,
       groundColor: 0x1a2138,
       laneLightColor: 0x7c8cff,
       laneGhostColor: 0xbab7ff,
@@ -70,7 +70,7 @@ const THEMES = {
     },
     fog: {
       near: 24,
-      far: 132,
+      far: 148,
       pulseFarOffset: -10,
     },
     uiMotion: {
@@ -88,8 +88,8 @@ const THEMES = {
   },
   brutalist: {
     palette: {
-      sceneBackground: 0x0c0c0d,
-      fogColor: 0x1c1c1f,
+      sceneBackground: 0x080810,
+      fogColor: 0x14141f,
       groundColor: 0x23232a,
       laneLightColor: 0xfefefe,
       laneGhostColor: 0xa6a6b0,
@@ -100,14 +100,14 @@ const THEMES = {
       particleColor: 0xf3f3f7,
     },
     emissive: { playerBase: 0.24, obstacleBase: 0.16, laneBase: 0.1, pulseBoost: 0.34 },
-    fog: { near: 30, far: 118, pulseFarOffset: -5 },
+    fog: { near: 30, far: 132, pulseFarOffset: -5 },
     uiMotion: { panelDriftSeconds: 7, pulseSeconds: 5, fadeSeconds: 0.25, hudOpacityBase: 0.74, hudOpacityBoost: 0.2 },
     geometry: { obstacleScaleMin: 0.9, obstacleScaleMax: 1.2, laneGhostCount: 2 },
   },
   retroTerminal: {
     palette: {
-      sceneBackground: 0x040b07,
-      fogColor: 0x10211a,
+      sceneBackground: 0x03080e,
+      fogColor: 0x0c1a18,
       groundColor: 0x173126,
       laneLightColor: 0x5eff8d,
       laneGhostColor: 0x92ffc0,
@@ -118,7 +118,7 @@ const THEMES = {
       particleColor: 0xd0ffe1,
     },
     emissive: { playerBase: 0.3, obstacleBase: 0.2, laneBase: 0.16, pulseBoost: 0.28 },
-    fog: { near: 26, far: 126, pulseFarOffset: -8 },
+    fog: { near: 26, far: 138, pulseFarOffset: -8 },
     uiMotion: { panelDriftSeconds: 6, pulseSeconds: 4, fadeSeconds: 0.22, hudOpacityBase: 0.7, hudOpacityBoost: 0.2 },
     geometry: { obstacleScaleMin: 0.85, obstacleScaleMax: 1.35, laneGhostCount: 3 },
   },

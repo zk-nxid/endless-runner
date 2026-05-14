@@ -6,6 +6,7 @@
   "description": "Browser-based neon endless runner rendered with PlayCanvas (world) and Three.js (player overlay).",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/check-vercel-supabase-env.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

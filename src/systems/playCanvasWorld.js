@@ -13,6 +13,8 @@ const SKYLINE_COUNT = 16;
 const SKYLINE_SPACING = 26;
 const SKYLINE_LOOP_DISTANCE = SKYLINE_COUNT * SKYLINE_SPACING;
 
+const VOID_RAIN_COUNT = 40;
+
 export class PlayCanvasWorld {
   constructor(canvas, theme, rng, obstaclePoolSize) {
     this.canvas = canvas;
@@ -20,6 +22,7 @@ export class PlayCanvasWorld {
     this.rng = rng;
     this.obstaclePoolSize = obstaclePoolSize;
     this.trackCenterOffsetZ = -300;
+    this._trackBodyZ = 0;
 
     this.app = new pc.Application(canvas, {
       graphicsDeviceOptions: { antialias: true, powerPreference: "high-performance" },
@@ -33,9 +36,13 @@ export class PlayCanvasWorld {
     this.#buildLights();
     this.#buildStaticWorld();
     this.#buildDustMotes();
+    this.#buildVoidRain();
     this.#buildObstaclePool();
     this.app.start();
-    this.app.on("update", (dt) => this.#tickDust(dt));
+    this.app.on("update", (dt) => {
+      this.#tickDust(dt);
+      this.#tickVoidRain(dt);
+    });
 
     this.moodIntensity = 0;
     this.obstacleMaterialSets = [];
@@ -114,6 +121,16 @@ export class PlayCanvasWorld {
       set.glow.emissive = this.#mixColors(darkGlow, lightGlow, paletteShift);
       set.glow.update();
     });
+
+    if (this.voidRain?.length) {
+      const baseOpacity = 0.1 + intensity * 0.12 + paletteShift * 0.05;
+      const emissiveInt = 0.52 + intensity * 0.34 + paletteShift * 0.14;
+      this.voidRain.forEach((entry) => {
+        entry.material.opacity = Math.min(0.28, baseOpacity);
+        entry.material.emissiveIntensity = emissiveInt;
+        entry.material.update();
+      });
+    }
   }
 
   syncObstacles(obstacleData) {
@@ -137,6 +154,7 @@ export class PlayCanvasWorld {
   }
 
   setTrackOffset(bodyZ) {
+    this._trackBodyZ = bodyZ;
     const z = bodyZ + this.trackCenterOffsetZ;
     this.ground.setPosition(0, 0, z);
     this.laneLights.forEach((entity) => {
@@ -411,6 +429,66 @@ export class PlayCanvasWorld {
       const newY = entry.baseY + Math.sin(t * 0.6 + entry.phase) * 0.18;
       const newX = p.x + Math.sin(t * 0.4 + entry.phase) * 0.012;
       entry.entity.setPosition(newX, newY, p.z);
+    }
+  }
+
+  #buildVoidRain() {
+    this.voidRain = [];
+    const palette = this.theme.palette;
+    const colors = [
+      palette.accentLightA ?? 0xff5bb7,
+      palette.accentLightB ?? 0x51d9ff,
+      palette.particleColor ?? 0xffd9ee,
+    ];
+    const bodyZ = this._trackBodyZ;
+    for (let i = 0; i < VOID_RAIN_COUNT; i += 1) {
+      const colorHex = colors[i % colors.length];
+      const mat = this.#standardMaterial({
+        color: 0x000000,
+        emissive: colorHex,
+        emissiveIntensity: 0.65,
+        opacity: 0.14,
+        blendType: pc.BLEND_ADDITIVE,
+      });
+      const streak = new pc.Entity("voidRainStreak");
+      streak.addComponent("render", { type: "box" });
+      streak.render.material = mat;
+      const w = this.rng.range(0.04, 0.09);
+      const h = this.rng.range(0.55, 1.35);
+      const d = this.rng.range(0.04, 0.08);
+      streak.setLocalScale(w, h, d);
+      const x = this.rng.range(-34, 34);
+      const z = bodyZ - this.rng.range(40, 200);
+      const y = this.rng.range(18, 46);
+      streak.setPosition(x, y, z);
+      this.app.root.addChild(streak);
+      this.voidRain.push({
+        entity: streak,
+        material: mat,
+        fallSpeed: this.rng.range(2.2, 5.8),
+        phase: this.rng.range(0, Math.PI * 2),
+      });
+    }
+  }
+
+  #tickVoidRain(dt) {
+    if (!this.voidRain?.length) return;
+    const bodyZ = this._trackBodyZ;
+    const t = performance.now() * 0.001;
+    const behindZ = bodyZ + 14;
+    const floorY = -2;
+    for (const entry of this.voidRain) {
+      const e = entry.entity;
+      const p = e.getPosition();
+      let y = p.y - entry.fallSpeed * dt;
+      let x = p.x + Math.sin(t * 0.35 + entry.phase) * 0.022 * dt;
+      let z = p.z;
+      if (y < floorY || z > behindZ) {
+        y = this.rng.range(20, 48);
+        x = this.rng.range(-36, 36);
+        z = bodyZ - this.rng.range(45, 200);
+      }
+      e.setPosition(x, y, z);
     }
   }
 

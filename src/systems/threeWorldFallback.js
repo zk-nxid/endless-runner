@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { CONFIG } from "../core/constants.js";
 
+const VOID_RAIN_COUNT = 40;
+
 export class ThreeWorldFallback {
   constructor(scene, theme, rng, obstaclePoolSize) {
     this.scene = scene;
@@ -11,10 +13,19 @@ export class ThreeWorldFallback {
     this.obstaclePool = [];
     this.laneLights = [];
     this.skyline = [];
+    this._voidRainPrevTime = null;
+
+    this.scene.background = new THREE.Color(this.theme.palette.sceneBackground);
+    this.scene.fog = new THREE.Fog(
+      this.theme.palette.fogColor,
+      this.theme.fog.near,
+      this.theme.fog.far
+    );
 
     this.#buildGround();
     this.#buildLaneLights();
     this.#buildSkyline();
+    this.#buildVoidRain();
     this.#buildObstaclePool(obstaclePoolSize);
   }
 
@@ -39,6 +50,13 @@ export class ThreeWorldFallback {
       const dark = new THREE.Color(this.theme.palette.sceneBackground);
       const light = new THREE.Color(this.theme.palette.lightSceneBackground ?? 0xc6b89a);
       this.scene.background.copy(dark.clone().lerp(light, paletteShift));
+    }
+    if (this.scene.fog) {
+      const darkFog = new THREE.Color(this.theme.palette.fogColor);
+      const lightFog = new THREE.Color(this.theme.palette.lightFogColor ?? 0xc8b88a);
+      this.scene.fog.color.copy(darkFog.lerp(lightFog, paletteShift));
+      this.scene.fog.near = this.theme.fog.near;
+      this.scene.fog.far = this.theme.fog.far;
     }
     const ghostCount = this.theme.geometry.laneGhostCount;
     this.laneLights.forEach((line, idx) => {
@@ -78,9 +96,23 @@ export class ThreeWorldFallback {
         mesh.material.emissive.copy(mesh.material.color);
       }
     });
+
+    if (this.voidRain?.length) {
+      const baseOpacity = 0.1 + intensity * 0.12 + paletteShift * 0.05;
+      this.voidRain.forEach((entry) => {
+        entry.mesh.material.opacity = Math.min(0.28, baseOpacity);
+      });
+    }
   }
 
   setTrackOffset(bodyZ) {
+    const now = performance.now();
+    const dt =
+      this._voidRainPrevTime == null
+        ? CONFIG.fixedDeltaSeconds
+        : Math.min(0.1, (now - this._voidRainPrevTime) / 1000);
+    this._voidRainPrevTime = now;
+
     const z = bodyZ + this.trackCenterOffsetZ;
     this.ground.position.z = z;
     this.laneLights.forEach((line) => {
@@ -92,6 +124,24 @@ export class ThreeWorldFallback {
       }
       tower.rotation.z = Math.sin(bodyZ * 0.03 + idx * 0.7) * 0.06;
     });
+
+    if (this.voidRain?.length) {
+      const t = now * 0.001;
+      const behindZ = bodyZ + 14;
+      const floorY = -2;
+      for (const entry of this.voidRain) {
+        const m = entry.mesh;
+        let y = m.position.y - entry.fallSpeed * dt;
+        let x = m.position.x + Math.sin(t * 0.35 + entry.phase) * 0.022 * dt;
+        let zPos = m.position.z;
+        if (y < floorY || zPos > behindZ) {
+          y = this.rng.range(20, 48);
+          x = this.rng.range(-36, 36);
+          zPos = bodyZ - this.rng.range(45, 200);
+        }
+        m.position.set(x, y, zPos);
+      }
+    }
   }
 
   #buildGround() {
@@ -157,6 +207,42 @@ export class ThreeWorldFallback {
       tower.rotation.y = side > 0 ? -0.2 : 0.2;
       this.skyline.push(tower);
       this.scene.add(tower);
+    }
+  }
+
+  #buildVoidRain() {
+    this.voidRain = [];
+    const palette = this.theme.palette;
+    const colors = [
+      new THREE.Color(palette.accentLightA ?? palette.laneLightColor),
+      new THREE.Color(palette.accentLightB ?? palette.laneGhostColor),
+      new THREE.Color(palette.particleColor ?? 0xffd9ee),
+    ];
+    const bodyZ = 0;
+    for (let i = 0; i < VOID_RAIN_COUNT; i += 1) {
+      const color = colors[i % colors.length].clone();
+      const mat = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.14,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const w = this.rng.range(0.04, 0.09);
+      const h = this.rng.range(0.55, 1.35);
+      const d = this.rng.range(0.04, 0.08);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      mesh.position.set(
+        this.rng.range(-34, 34),
+        this.rng.range(18, 46),
+        bodyZ - this.rng.range(40, 200)
+      );
+      this.scene.add(mesh);
+      this.voidRain.push({
+        mesh,
+        fallSpeed: this.rng.range(2.2, 5.8),
+        phase: this.rng.range(0, Math.PI * 2),
+      });
     }
   }
 
