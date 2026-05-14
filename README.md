@@ -1,6 +1,6 @@
 # Neon Runner (Three.js + PlayCanvas)
 
-Browser-based neon endless runner. The 3D world (track, neon obstacles, skyline, lights, fog) is rendered with **PlayCanvas Engine 2.x**, while the **player avatar** is rendered with **Three.js** on a transparent canvas overlay above. Both engines share an engine-agnostic camera state for perfect lockstep.
+Browser-based neon endless runner. The 3D world (track, neon obstacles, cinematic sky, lights, fog) is rendered with **PlayCanvas Engine 2.x**, while the **player avatar** is rendered with **Three.js** on a transparent canvas overlay above. Both engines share an engine-agnostic camera state for perfect lockstep.
 
 ## Run Locally
 
@@ -45,7 +45,7 @@ Use `npm run build` for a production bundle into `dist/`, and `npm run preview` 
 
 ## Architecture
 
-- **PlayCanvas world** ([src/systems/playCanvasWorld.js](src/systems/playCanvasWorld.js)) - ground, lane lines, neon obstacles (low blocks / pillars / arches / tall towers), skyline silhouettes, particles, lights, fog. Manual render mode driven by the game loop.
+- **PlayCanvas world** ([src/systems/playCanvasWorld.js](src/systems/playCanvasWorld.js)) - ground, lane lines, neon obstacles (low blocks / pillars / arches / tall towers), cinematic sky backdrop, particles, lights, fog. Manual render mode driven by the game loop.
 - **Three.js avatar** ([src/core/game.js](src/core/game.js)) - just the player on a transparent canvas overlay.
 - **CameraSystem** ([src/systems/cameraSystem.js](src/systems/cameraSystem.js)) - engine-agnostic state (`{ position, lookAt, fov, aspect }`) that both engines mirror each frame.
 
@@ -78,7 +78,7 @@ Use `npm run build` for a production bundle into `dist/`, and `npm run preview` 
 ## Performance Guardrails
 
 - Manual render mode keeps both engines in lockstep with no double-frame waste.
-- Particle count and skyline count are capped intentionally; raise cautiously for mobile.
+- Particle counts are capped intentionally; raise cautiously for mobile.
 - Pixel ratio is capped at `2` for stable frame pacing on mid-tier devices.
 
 ## Deployment Notes

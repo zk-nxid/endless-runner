@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { CONFIG, GAME_STATES } from "./constants.js";
 import { SeededRng } from "./rng.js";
 import { InputSystem } from "../systems/inputSystem.js";
@@ -60,18 +61,34 @@ export class Game {
     );
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
+    this.renderer.toneMappingExposure = 1.02;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(this.renderer), 0.04).texture;
+    pmrem.dispose();
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
     const directional = new THREE.DirectionalLight(
       this.theme.palette.accentLightB ?? 0xc2d4ff,
-      1.35
+      1.55
     );
     directional.position.set(8, 18, 8);
+    directional.castShadow = true;
+    directional.shadow.mapSize.set(2048, 2048);
+    directional.shadow.camera.near = 0.5;
+    directional.shadow.camera.far = 140;
+    directional.shadow.camera.left = -28;
+    directional.shadow.camera.right = 28;
+    directional.shadow.camera.top = 32;
+    directional.shadow.camera.bottom = -24;
+    directional.shadow.bias = -0.00028;
+    directional.shadow.normalBias = 0.028;
     const rimLight = new THREE.DirectionalLight(
       this.theme.palette.accentLightA ?? 0xff5bb7,
-      0.95
+      0.88
     );
     rimLight.position.set(-6, 8, -10);
     this.scene.add(ambient, directional, rimLight);
@@ -168,16 +185,24 @@ export class Game {
 
     const equipped = getSkin(this.shop?.getEquipped?.());
 
-    const coreMat = new THREE.MeshStandardMaterial({
+    const coreMat = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       emissive: 0xffffff,
       emissiveIntensity: this.theme.emissive.playerBase + 0.4,
-      metalness: 0.25,
-      roughness: 0.32,
+      metalness: 0.38,
+      roughness: 0.2,
+      clearcoat: 0.62,
+      clearcoatRoughness: 0.12,
+      iridescence: 0.42,
+      iridescenceIOR: 1.2,
+      iridescenceThicknessRange: [100, 400],
+      envMapIntensity: 1.15,
     });
     this.#syncBallMaterialToSkin(coreMat, equipped);
 
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.65, 32, 24), coreMat);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.65, 48, 32), coreMat);
+    core.castShadow = true;
+    core.receiveShadow = true;
     group.add(core);
     this.playerCoreMesh = core;
     this.playerEmissiveMaterials.push(coreMat);

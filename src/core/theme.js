@@ -1,9 +1,9 @@
 const THEMES = {
   retroNeon: {
     palette: {
-      sceneBackground: 0x070714,
-      fogColor: 0x12182a,
-      groundColor: 0x1b1322,
+      sceneBackground: 0x050510,
+      fogColor: 0x0e101f,
+      groundColor: 0x14101c,
       laneLightColor: 0xff5bb7,
       laneGhostColor: 0x51d9ff,
       playerColor: 0xfff1c7,
@@ -32,8 +32,8 @@ const THEMES = {
       pulseBoost: 0.44,
     },
     fog: {
-      near: 32,
-      far: 188,
+      near: 26,
+      far: 220,
       pulseFarOffset: 0,
     },
     uiMotion: {

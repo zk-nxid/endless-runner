@@ -18,10 +18,10 @@ export class PostFxSystem {
     this.scene = scene;
     this.camera = camera;
     this.enabled = true;
-    this.baseBloomStrength = 0.32;
-    this.baseBloomRadius = 0.42;
-    this.baseBloomThreshold = 0.6;
-    this.baseAberration = 0.0006;
+    this.baseBloomStrength = 0.4;
+    this.baseBloomRadius = 0.48;
+    this.baseBloomThreshold = 0.52;
+    this.baseAberration = 0.00045;
     this.aberrationBoost = 0;
     this.bloomBoost = 0;
 

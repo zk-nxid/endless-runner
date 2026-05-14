@@ -19,10 +19,10 @@ export const CONFIG = {
   spawnMinDistance: 12,
   spawnMaxDistance: 24,
   camera: {
-    followHeight: 4.8,
-    followDistance: 8.5,
-    damping: 10,
-    fov: 67,
+    followHeight: 5.1,
+    followDistance: 9.2,
+    damping: 9,
+    fov: 61,
   },
   mood: {
     speedWeight: 0.045,
@@ -38,3 +38,6 @@ export const CONFIG = {
     speedMultiplier: 0.5,
   },
 };
+
+CONFIG.runwayStripWidth =
+  (CONFIG.laneCount - 1) * CONFIG.laneWidth + CONFIG.laneWidth * 0.38;

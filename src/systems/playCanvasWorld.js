@@ -9,11 +9,35 @@ export const OBSTACLE_PROFILES = [
   { type: "speedPad", colliderHeight: 0.02, unjumpable: false, isBoost: true },
 ];
 
-const SKYLINE_COUNT = 16;
-const SKYLINE_SPACING = 26;
-const SKYLINE_LOOP_DISTANCE = SKYLINE_COUNT * SKYLINE_SPACING;
+const VOID_RAIN_COUNT = 10;
+/** World units/s²; integrated each tick with per-item fallVel for gravity-like drops. */
+const VOID_RAIN_GRAVITY = 13;
+/** Scale for void-rain obstacle shapes (matches lane dodge props). */
+const VOID_JUNK_CLUSTER_SCALE = 2.45;
+/**
+ * Recycle only far under the playfield (large props must clear camera + fog).
+ * Tall obstacle scale (~2.45×) needs extra margin so roots don’t vanish mid-fall.
+ */
+const VOID_RAIN_VANISH_Y = -118;
+const VOID_RAIN_VIRTUAL_TOP_MIN = 68;
+const VOID_RAIN_VIRTUAL_TOP_MAX = 102;
+/** Fall distance below apex H for first spawn — keeps debris in the upper sky, not popping near the lane. */
+const VOID_RAIN_SPAWN_DEPTH_MIN = 5;
+const VOID_RAIN_SPAWN_DEPTH_MAX = 36;
+/** Re-entry after recycle: always near the virtual ceiling (short fall so it reads as “still raining”). */
+const VOID_RAIN_RESPAWN_DEPTH_MIN = 2.5;
+const VOID_RAIN_RESPAWN_DEPTH_MAX = 20;
+/** Furthest |world x| void rain uses (fills the horizon; lane strip is hollowed out). */
+const VOID_RAIN_X_OUTER = 132;
 
-const VOID_RAIN_COUNT = 40;
+/** Half-width of the no-drop corridor over the playable lanes (+ margin for scaled props). */
+function voidRainLaneExcludeHalf() {
+  const laneOuter = ((CONFIG.laneCount - 1) * CONFIG.laneWidth) / 2 + CONFIG.laneWidth * 0.5;
+  return laneOuter + CONFIG.laneWidth * 0.92;
+}
+
+const SKY_STAR_COUNT = 88;
+const SKY_AURORA_STRIPS = 5;
 
 export class PlayCanvasWorld {
   constructor(canvas, theme, rng, obstaclePoolSize) {
@@ -38,8 +62,12 @@ export class PlayCanvasWorld {
     this.#buildDustMotes();
     this.#buildVoidRain();
     this.#buildObstaclePool();
+    this.#buildCinematicSky();
     this.app.start();
+    this.#initCinematicFrame();
     this.app.on("update", (dt) => {
+      this.cameraFrame?.update(dt);
+      this.#tickCinematicSky(dt);
       this.#tickDust(dt);
       this.#tickVoidRain(dt);
     });
@@ -54,6 +82,7 @@ export class PlayCanvasWorld {
     if (this.cameraEntity.camera.fov !== state.fov) {
       this.cameraEntity.camera.fov = state.fov;
     }
+    this.#syncCinematicSkyToCamera(state);
   }
 
   setMoodIntensity(intensity, paletteShift = 0) {
@@ -95,14 +124,6 @@ export class PlayCanvasWorld {
       mat.update();
     });
 
-    const skylineOpacity = 0.28 + intensity * 0.32;
-    this.skylineBodyMaterial.opacity = skylineOpacity;
-    this.skylineBodyMaterial.update();
-    this.skylineCrownMaterial.opacity = 0.2 + intensity * 0.4;
-    this.skylineCrownMaterial.update();
-    this.skylineWindowMaterial.opacity = 0.32 + intensity * 0.46;
-    this.skylineWindowMaterial.update();
-
     const darkBase = this.#colorFromHex(this.theme.palette.obstacleBaseColor);
     const darkAccent = this.#colorFromHex(this.theme.palette.obstacleAccentColor);
     const darkGlow = this.#colorFromHex(this.theme.palette.playerColor);
@@ -123,13 +144,47 @@ export class PlayCanvasWorld {
     });
 
     if (this.voidRain?.length) {
-      const baseOpacity = 0.1 + intensity * 0.12 + paletteShift * 0.05;
-      const emissiveInt = 0.52 + intensity * 0.34 + paletteShift * 0.14;
+      const baseOpacity = 0.5 + intensity * 0.3 + paletteShift * 0.08;
+      const emissiveInt = 0.32 + intensity * 0.52 + paletteShift * 0.14;
       this.voidRain.forEach((entry) => {
-        entry.material.opacity = Math.min(0.28, baseOpacity);
-        entry.material.emissiveIntensity = emissiveInt;
-        entry.material.update();
+        for (const mat of entry.materials) {
+          mat.opacity = Math.min(0.94, baseOpacity);
+          mat.emissiveIntensity = emissiveInt;
+          mat.update();
+        }
       });
+    }
+
+    if (this.cameraFrame) {
+      const m = Math.max(0, Math.min(1, intensity));
+      this.cameraFrame.bloom.intensity = 0.028 + m * 0.055;
+      this.cameraFrame.vignette.intensity = 0.24 + m * 0.15;
+      this.cameraFrame.colorEnhance.vibrance = 0.2 + m * 0.18;
+    }
+
+    if (this.skyDomeMaterial) {
+      const m = Math.max(0, Math.min(1, intensity));
+      this.skyDomeMaterial.emissiveIntensity = 1.05 + m * 0.5;
+      this.skyDomeMaterial.update();
+    }
+    if (this.auroraStrips?.length) {
+      const m = Math.max(0, Math.min(1, intensity));
+      for (const s of this.auroraStrips) {
+        s.mat.emissiveIntensity = s.baseEmissive * (0.72 + m * 0.65);
+        s.mat.update();
+      }
+    }
+    if (this.megaRingMaterial) {
+      const m = Math.max(0, Math.min(1, intensity));
+      this.megaRingMaterial.emissiveIntensity = 0.5 + m * 0.85;
+      this.megaRingMaterial.update();
+    }
+    if (this.skyStarEntries?.length) {
+      const m = Math.max(0, Math.min(1, intensity));
+      const mul = 0.82 + m * 0.52;
+      for (const entry of this.skyStarEntries) {
+        entry.moodMul = mul;
+      }
     }
   }
 
@@ -161,15 +216,6 @@ export class PlayCanvasWorld {
       const p = entity.getPosition();
       entity.setPosition(p.x, p.y, z);
     });
-    this.skylineTowers.forEach((entry) => {
-      if (entry.entity.getPosition().z > bodyZ + 12) {
-        const p = entry.entity.getPosition();
-        entry.entity.setPosition(p.x, p.y, p.z - SKYLINE_LOOP_DISTANCE);
-      }
-      const p = entry.entity.getPosition();
-      const sway = Math.sin(bodyZ * 0.03 + entry.swayPhase) * 0.06;
-      entry.entity.setEulerAngles(0, entry.baseYaw, sway * 57.2957795);
-    });
     if (this.dustMotes) {
       const dustLoopAhead = bodyZ - 70;
       const dustLoopBehind = bodyZ + 8;
@@ -197,10 +243,14 @@ export class PlayCanvasWorld {
     this.app.scene.fogEnd = this.theme.fog.far;
     this.app.scene.fogColor = this.#colorFromHex(this.theme.palette.fogColor);
     const ambient = this.#colorFromHex(this.theme.palette.accentLightA ?? 0x8a97d8);
-    ambient.r *= 0.55;
-    ambient.g *= 0.55;
-    ambient.b *= 0.55;
+    ambient.r *= 0.62;
+    ambient.g *= 0.62;
+    ambient.b *= 0.62;
     this.app.scene.ambientLight = ambient;
+
+    if (this.app.scene.lighting) {
+      this.app.scene.lighting.shadowsEnabled = true;
+    }
 
     if (typeof pc.TONEMAP_ACES !== "undefined") {
       this.app.scene.toneMapping = pc.TONEMAP_ACES;
@@ -208,11 +258,48 @@ export class PlayCanvasWorld {
       this.app.scene.toneMapping = pc.TONEMAP_FILMIC;
     }
     if (this.app.scene.exposure !== undefined) {
-      this.app.scene.exposure = 0.95;
+      this.app.scene.exposure = 1.05;
     }
     if (this.app.scene.skyboxIntensity !== undefined) {
       this.app.scene.skyboxIntensity = 0.9;
     }
+  }
+
+  /** HDR frame graph: bloom, SSAO, grading — tuned for a grounded cinematic look. */
+  #initCinematicFrame() {
+    if (typeof pc.CameraFrame === "undefined") return;
+    const camera = this.cameraEntity.camera;
+    this.cameraFrame = new pc.CameraFrame(this.app, camera);
+    const cf = this.cameraFrame;
+    cf.rendering.toneMapping =
+      typeof pc.TONEMAP_ACES !== "undefined" ? pc.TONEMAP_ACES : cf.rendering.toneMapping;
+    cf.rendering.sharpness = 0.22;
+    cf.rendering.samples = 2;
+    cf.bloom.intensity = 0.032;
+    cf.bloom.blurLevel = 12;
+    cf.ssao.type = pc.SSAOTYPE_COMBINE;
+    cf.ssao.intensity = 0.32;
+    cf.ssao.radius = 22;
+    cf.ssao.samples = 9;
+    cf.ssao.power = 4.5;
+    cf.ssao.blurEnabled = true;
+    cf.grading.enabled = true;
+    cf.grading.saturation = 1.08;
+    cf.grading.contrast = 1.07;
+    cf.grading.brightness = 0.98;
+    cf.grading.tint.set(0.96, 0.99, 1.05);
+    cf.colorEnhance.enabled = true;
+    cf.colorEnhance.vibrance = 0.22;
+    cf.colorEnhance.shadows = 0.12;
+    cf.colorEnhance.midtones = 0.05;
+    cf.colorEnhance.highlights = -0.1;
+    cf.colorEnhance.dehaze = 0.1;
+    cf.vignette.intensity = 0.3;
+    cf.vignette.inner = 0.52;
+    cf.vignette.outer = 1.22;
+    cf.vignette.curvature = 0.78;
+    cf.vignette.color.set(0.02, 0.01, 0.06);
+    cf.fringing.intensity = 2.6;
   }
 
   #buildCamera() {
@@ -228,31 +315,53 @@ export class PlayCanvasWorld {
 
   #buildLights() {
     this.dirLight = new pc.Entity("dirLight");
-    this.dirLight.addComponent("light", {
+    const keyLightOpts = {
       type: "directional",
       color: this.#colorFromHex(this.theme.palette.accentLightB ?? 0xc2d4ff),
-      intensity: 1.15,
-    });
-    this.dirLight.setEulerAngles(55, 30, 0);
+      intensity: 1.28,
+      castShadows: true,
+      shadowDistance: 96,
+      shadowResolution: 2048,
+      shadowIntensity: 1,
+      shadowBias: 0.04,
+      normalOffsetBias: 0.28,
+      shadowSamples: 20,
+    };
+    if (typeof pc.SHADOW_PCF5 !== "undefined") {
+      keyLightOpts.shadowType = pc.SHADOW_PCF5;
+    }
+    this.dirLight.addComponent("light", keyLightOpts);
+    this.dirLight.setEulerAngles(58, 34, 0);
     this.app.root.addChild(this.dirLight);
+
+    this.fillLight = new pc.Entity("fillLight");
+    this.fillLight.addComponent("light", {
+      type: "directional",
+      color: this.#colorFromHex(this.theme.palette.accentLightA ?? 0xff5bb7),
+      intensity: 0.42,
+      castShadows: false,
+    });
+    this.fillLight.setEulerAngles(-18, -128, 0);
+    this.app.root.addChild(this.fillLight);
   }
 
   #buildStaticWorld() {
     const groundMat = this.#standardMaterial({
       color: this.theme.palette.groundColor,
-      metalness: 0.12,
-      gloss: 0.08,
+      metalness: 0.22,
+      gloss: 0.14,
+      clearCoat: 0.38,
+      clearCoatGloss: 0.72,
     });
     this.groundMaterial = groundMat;
     this.ground = new pc.Entity("ground");
     this.ground.addComponent("render", { type: "plane" });
     this.ground.render.material = groundMat;
-    this.ground.setLocalScale(30, 1, 700);
+    this.ground.setLocalScale(CONFIG.runwayStripWidth, 1, 700);
     this.ground.setPosition(0, 0, this.trackCenterOffsetZ);
     this.app.root.addChild(this.ground);
 
     this.#buildLaneLights();
-    this.#buildSkyline();
   }
 
   #buildLaneLights() {
@@ -284,102 +393,6 @@ export class PlayCanvasWorld {
         this.laneLights.push(lane);
         this.app.root.addChild(lane);
       }
-    }
-  }
-
-  #buildSkyline() {
-    this.skylineTowers = [];
-    this.skylineBodyMaterial = this.#standardMaterial({
-      color: 0x2c1f38,
-      emissive: 0x2c1f38,
-      emissiveIntensity: 0.05,
-      opacity: 0.6,
-      blendType: pc.BLEND_NORMAL,
-    });
-    this.skylineCrownMaterial = this.#standardMaterial({
-      color: 0x000000,
-      emissive: this.theme.palette.accentLightA ?? this.theme.palette.laneLightColor,
-      emissiveIntensity: 1.0,
-      opacity: 0.45,
-      blendType: pc.BLEND_NORMAL,
-    });
-    this.skylineWindowMaterial = this.#standardMaterial({
-      color: 0x000000,
-      emissive: this.theme.palette.accentLightB ?? this.theme.palette.laneGhostColor,
-      emissiveIntensity: 1.0,
-      opacity: 0.55,
-      blendType: pc.BLEND_NORMAL,
-    });
-    this.skylineTrimMaterial = this.#standardMaterial({
-      color: 0x000000,
-      emissive: this.theme.palette.accentLightA ?? this.theme.palette.laneLightColor,
-      emissiveIntensity: 0.7,
-      opacity: 0.55,
-      blendType: pc.BLEND_NORMAL,
-    });
-
-    for (let i = 0; i < SKYLINE_COUNT; i += 1) {
-      const width = this.rng.range(1.7, 3.3);
-      const height = this.rng.range(2.8, 6.5);
-      const side = i % 2 === 0 ? -1 : 1;
-      const xOffset = side * this.rng.range(6.2, 11.2);
-      const yOffset = this.rng.range(2.6, 5.8);
-      const z = -40 - i * SKYLINE_SPACING;
-      const baseYaw = side > 0 ? -11 : 11;
-      const swayPhase = this.rng.range(0, Math.PI * 2);
-
-      const tower = new pc.Entity("skylineTower");
-      tower.setPosition(xOffset, yOffset, z);
-      tower.setEulerAngles(0, baseYaw, 0);
-
-      const body = new pc.Entity("body");
-      body.addComponent("render", { type: "box" });
-      body.render.material = this.skylineBodyMaterial;
-      body.setLocalScale(width, height, 0.2);
-      tower.addChild(body);
-
-      const crown = new pc.Entity("crown");
-      crown.addComponent("render", { type: "box" });
-      crown.render.material = this.skylineCrownMaterial;
-      crown.setLocalScale(width * 0.72, 0.26, 0.16);
-      crown.setLocalPosition(0, height * 0.5 + 0.16, 0);
-      tower.addChild(crown);
-
-      // Neon edge trim strips - vertical glow on tower corners
-      for (const xSign of [-1, 1]) {
-        const trim = new pc.Entity("trim");
-        trim.addComponent("render", { type: "box" });
-        trim.render.material = this.skylineTrimMaterial;
-        trim.setLocalScale(0.04, height * 0.95, 0.04);
-        trim.setLocalPosition(xSign * (width * 0.5 - 0.02), 0, 0.13);
-        tower.addChild(trim);
-      }
-      const topTrim = new pc.Entity("topTrim");
-      topTrim.addComponent("render", { type: "box" });
-      topTrim.render.material = this.skylineTrimMaterial;
-      topTrim.setLocalScale(width * 0.92, 0.05, 0.04);
-      topTrim.setLocalPosition(0, height * 0.5 - 0.04, 0.13);
-      tower.addChild(topTrim);
-
-      const windowRows = 3;
-      const windowCols = 2;
-      for (let row = 0; row < windowRows; row += 1) {
-        for (let col = 0; col < windowCols; col += 1) {
-          const w = new pc.Entity("window");
-          w.addComponent("render", { type: "box" });
-          w.render.material = this.skylineWindowMaterial;
-          w.setLocalScale(0.2, 0.26, 0.04);
-          w.setLocalPosition(
-            -0.35 + col * 0.7,
-            -height * 0.3 + row * (height / (windowRows + 1)),
-            0.13
-          );
-          tower.addChild(w);
-        }
-      }
-
-      this.app.root.addChild(tower);
-      this.skylineTowers.push({ entity: tower, baseYaw, swayPhase });
     }
   }
 
@@ -432,41 +445,190 @@ export class PlayCanvasWorld {
     }
   }
 
+  #junkTrackMat(materials, mat) {
+    if (!materials.includes(mat)) materials.push(mat);
+  }
+
+  #junkScatterMat(emissiveHex, opts = {}) {
+    const mat = this.#standardMaterial({
+      color: opts.diffuse ?? emissiveHex,
+      emissive: emissiveHex,
+      emissiveIntensity: opts.emissiveIntensity ?? 0.42,
+      metalness: opts.metalness ?? 0.4,
+      gloss: opts.gloss ?? 0.56,
+      opacity: opts.opacity ?? 0.82,
+      blendType: pc.BLEND_NORMAL,
+      clearCoat: opts.clearCoat ?? 0.2,
+      clearCoatGloss: 0.82,
+    });
+    mat.depthWrite = false;
+    mat.update();
+    return mat;
+  }
+
+  #junkAddBox(parent, materials, mat, sx, sy, sz, px, py, pz, rx = 0, ry = 0, rz = 0) {
+    const e = new pc.Entity("junkPart");
+    e.addComponent("render", { type: "box" });
+    e.render.material = mat;
+    e.render.castShadows = false;
+    e.render.receiveShadows = false;
+    e.setLocalScale(sx, sy, sz);
+    e.setLocalPosition(px, py, pz);
+    e.setLocalEulerAngles(rx, ry, rz);
+    parent.addChild(e);
+    this.#junkTrackMat(materials, mat);
+  }
+
+  /**
+   * Box-segment ring (same idea as lane neon-arch handle), for void-rain obstacle copies.
+   */
+  #voidRainRingEntity(materials, mat, ringRadius, thickness, segments) {
+    const ring = new pc.Entity("voidRainRing");
+    for (let i = 0; i < segments; i += 1) {
+      const part = new pc.Entity("voidRainRingPart");
+      part.addComponent("render", { type: "box" });
+      part.render.material = mat;
+      part.render.castShadows = false;
+      part.render.receiveShadows = false;
+      const theta = (i / segments) * Math.PI * 2;
+      const nextTheta = ((i + 1) / segments) * Math.PI * 2;
+      const chord = Math.max(
+        0.02,
+        ringRadius * Math.hypot(Math.cos(nextTheta) - Math.cos(theta), Math.sin(nextTheta) - Math.sin(theta))
+      );
+      part.setLocalScale(chord, thickness, thickness);
+      part.setLocalPosition(Math.cos(theta) * ringRadius, Math.sin(theta) * ringRadius, 0);
+      part.setLocalEulerAngles(0, 0, (theta * 180) / Math.PI);
+      ring.addChild(part);
+    }
+    this.#junkTrackMat(materials, mat);
+    return ring;
+  }
+
+  /** Same composite shapes as `#buildObstacleEntity`, minus boost pads — scenery only. */
+  #createVoidRainCluster() {
+    const root = new pc.Entity("voidRainObstacle");
+    const materials = [];
+    const pal = this.theme.palette;
+    const useAccentLead = this.rng.next() > 0.5;
+    const baseHex = useAccentLead ? pal.obstacleAccentColor : pal.obstacleBaseColor;
+    const accentHex = useAccentLead ? pal.obstacleBaseColor : pal.obstacleAccentColor;
+    const glowHex = pal.playerColor;
+    const emBase = this.theme.emissive.obstacleBase;
+
+    const bodyMat = this.#junkScatterMat(baseHex, {
+      emissiveIntensity: emBase,
+      metalness: 0.42,
+      gloss: 0.55,
+      clearCoat: 0.28,
+    });
+    const accentMat = this.#junkScatterMat(accentHex, {
+      emissiveIntensity: emBase * 0.85,
+      metalness: 0.45,
+      gloss: 0.62,
+      clearCoat: 0.34,
+    });
+    const glowMat = this.#junkScatterMat(glowHex, {
+      emissiveIntensity: emBase * 1.15,
+      metalness: 0.32,
+      gloss: 0.72,
+      clearCoat: 0.22,
+    });
+
+    const types = ["luggage", "keycardPillar", "neonArch", "tower"];
+    const type = types[Math.floor(this.rng.range(0, 4))];
+    const s = VOID_JUNK_CLUSTER_SCALE * this.rng.range(0.88, 1.08);
+
+    if (type === "luggage") {
+      this.#junkAddBox(root, materials, bodyMat, 1.05 * s, 0.82 * s, 0.72 * s, 0, 0, 0);
+      const handle = this.#voidRainRingEntity(materials, accentMat, 0.18 * s, 0.04 * s, 14);
+      handle.setLocalPosition(0, 0.5 * s, 0);
+      handle.setLocalEulerAngles(90, 0, 0);
+      root.addChild(handle);
+      this.#junkAddBox(root, materials, glowMat, 1.08 * s, 0.14 * s, 0.06 * s, 0, 0.08 * s, 0.37 * s);
+    } else if (type === "keycardPillar") {
+      this.#junkAddBox(root, materials, bodyMat, 0.62 * s, 1.5 * s, 0.13 * s, 0, 0, 0);
+      this.#junkAddBox(root, materials, accentMat, 0.16 * s, 0.16 * s, 0.05 * s, 0, 0.18 * s, 0.09 * s);
+      this.#junkAddBox(root, materials, glowMat, 0.44 * s, 0.08 * s, 0.02 * s, 0, -0.3 * s, 0.085 * s);
+    } else if (type === "neonArch") {
+      const ring = this.#voidRainRingEntity(materials, accentMat, 0.46 * s, 0.12 * s, 24);
+      root.addChild(ring);
+      this.#junkAddBox(root, materials, bodyMat, 0.2 * s, 0.66 * s, 0.2 * s, -0.44 * s, -0.45 * s, 0);
+      this.#junkAddBox(root, materials, bodyMat, 0.2 * s, 0.66 * s, 0.2 * s, 0.44 * s, -0.45 * s, 0);
+      this.#junkAddBox(root, materials, glowMat, 0.6 * s, 0.14 * s, 0.06 * s, 0, 0.12 * s, 0);
+    } else {
+      this.#junkAddBox(root, materials, bodyMat, 1.4 * s, 3.2 * s, 1.2 * s, 0, 0, 0);
+      this.#junkAddBox(root, materials, accentMat, 1.12 * s, 0.38 * s, 1.02 * s, 0, 1.72 * s, 0);
+      this.#junkAddBox(root, materials, glowMat, 1.46 * s, 0.2 * s, 0.08 * s, 0, 1.35 * s, 0.62 * s);
+    }
+
+    return { root, materials };
+  }
+
+  /**
+   * Depth below a virtual apex H (always high sky). Velocity matches distance already
+   * fallen: v = sqrt(2 g depth), so motion never looks like a mid-air spawn at rest.
+   */
+  #sampleVoidJunkKinematics(recycle) {
+    const H = this.rng.range(VOID_RAIN_VIRTUAL_TOP_MIN, VOID_RAIN_VIRTUAL_TOP_MAX);
+    const yHi = H - 0.35;
+    if (!recycle) {
+      const depth = this.rng.range(VOID_RAIN_SPAWN_DEPTH_MIN, VOID_RAIN_SPAWN_DEPTH_MAX);
+      const y = Math.min(H - depth, yHi);
+      const fallVel = Math.sqrt(Math.max(0, 2 * VOID_RAIN_GRAVITY * depth));
+      return { y, fallVel };
+    }
+    const depth = this.rng.range(VOID_RAIN_RESPAWN_DEPTH_MIN, VOID_RAIN_RESPAWN_DEPTH_MAX);
+    const y = Math.min(H - depth, yHi);
+    const fallVel = Math.sqrt(Math.max(0, 2 * VOID_RAIN_GRAVITY * depth));
+    return { y, fallVel };
+  }
+
+  /** Samples world X in (-outer, -inner] ∪ [inner, outer) — never over the runway strip. */
+  #sampleVoidRainX() {
+    const inner = voidRainLaneExcludeHalf();
+    if (this.rng.next() < 0.5) {
+      return this.rng.range(-VOID_RAIN_X_OUTER, -inner);
+    }
+    return this.rng.range(inner, VOID_RAIN_X_OUTER);
+  }
+
+  /** If lateral drift carries debris into the lane corridor, shove it back to the nearest wing. */
+  #clampVoidRainX(x, prevX) {
+    const inner = voidRainLaneExcludeHalf();
+    if (x > -inner && x < inner) {
+      const dir = Math.sign(prevX) || (this.rng.next() < 0.5 ? -1 : 1);
+      return dir * (inner + 0.38);
+    }
+    return x;
+  }
+
   #buildVoidRain() {
     this.voidRain = [];
-    const palette = this.theme.palette;
-    const colors = [
-      palette.accentLightA ?? 0xff5bb7,
-      palette.accentLightB ?? 0x51d9ff,
-      palette.particleColor ?? 0xffd9ee,
-    ];
     const bodyZ = this._trackBodyZ;
     for (let i = 0; i < VOID_RAIN_COUNT; i += 1) {
-      const colorHex = colors[i % colors.length];
-      const mat = this.#standardMaterial({
-        color: 0x000000,
-        emissive: colorHex,
-        emissiveIntensity: 0.65,
-        opacity: 0.14,
-        blendType: pc.BLEND_ADDITIVE,
-      });
-      const streak = new pc.Entity("voidRainStreak");
-      streak.addComponent("render", { type: "box" });
-      streak.render.material = mat;
-      const w = this.rng.range(0.04, 0.09);
-      const h = this.rng.range(0.55, 1.35);
-      const d = this.rng.range(0.04, 0.08);
-      streak.setLocalScale(w, h, d);
-      const x = this.rng.range(-34, 34);
-      const z = bodyZ - this.rng.range(40, 200);
-      const y = this.rng.range(18, 46);
-      streak.setPosition(x, y, z);
-      this.app.root.addChild(streak);
+      const { root, materials } = this.#createVoidRainCluster();
+      const x0 = this.#sampleVoidRainX();
+      const z0 = bodyZ - this.rng.range(40, 200);
+      const { y: y0, fallVel: v0 } = this.#sampleVoidJunkKinematics(false);
+
+      this.app.root.addChild(root);
+      root.setPosition(x0, y0, z0);
+      root.setLocalEulerAngles(
+        this.rng.range(0, 360),
+        this.rng.range(0, 360),
+        this.rng.range(0, 360)
+      );
       this.voidRain.push({
-        entity: streak,
-        material: mat,
-        fallSpeed: this.rng.range(2.2, 5.8),
+        entity: root,
+        materials,
+        fallVel: v0,
         phase: this.rng.range(0, Math.PI * 2),
+        spin: {
+          x: this.rng.range(-50, 50),
+          y: this.rng.range(-50, 50),
+          z: this.rng.range(-50, 50),
+        },
       });
     }
   }
@@ -476,17 +638,21 @@ export class PlayCanvasWorld {
     const bodyZ = this._trackBodyZ;
     const t = performance.now() * 0.001;
     const behindZ = bodyZ + 14;
-    const floorY = -2;
     for (const entry of this.voidRain) {
       const e = entry.entity;
+      e.rotateLocal(entry.spin.x * dt, entry.spin.y * dt, entry.spin.z * dt);
       const p = e.getPosition();
-      let y = p.y - entry.fallSpeed * dt;
-      let x = p.x + Math.sin(t * 0.35 + entry.phase) * 0.022 * dt;
+      entry.fallVel += VOID_RAIN_GRAVITY * dt;
+      let y = p.y - entry.fallVel * dt;
+      let x = p.x + Math.sin(t * 0.35 + entry.phase) * 0.018 * dt;
+      x = this.#clampVoidRainX(x, p.x);
       let z = p.z;
-      if (y < floorY || z > behindZ) {
-        y = this.rng.range(20, 48);
-        x = this.rng.range(-36, 36);
+      if (y < VOID_RAIN_VANISH_Y || z > behindZ) {
+        const kin = this.#sampleVoidJunkKinematics(true);
+        y = kin.y;
+        x = this.#sampleVoidRainX();
         z = bodyZ - this.rng.range(45, 200);
+        entry.fallVel = kin.fallVel;
       }
       e.setPosition(x, y, z);
     }
@@ -519,22 +685,28 @@ export class PlayCanvasWorld {
         color: baseHex,
         emissive: baseHex,
         emissiveIntensity: isBoost ? 0.7 : this.theme.emissive.obstacleBase,
-        metalness: isBoost ? 0.1 : 0.34,
-        gloss: isBoost ? 0.85 : 0.48,
+        metalness: isBoost ? 0.18 : 0.42,
+        gloss: isBoost ? 0.9 : 0.55,
+        clearCoat: isBoost ? 0.75 : 0.28,
+        clearCoatGloss: isBoost ? 0.95 : 0.82,
       });
       const accentMat = this.#standardMaterial({
         color: accentHex,
         emissive: accentHex,
         emissiveIntensity: isBoost ? 0.85 : this.theme.emissive.obstacleBase * 0.85,
-        metalness: isBoost ? 0.1 : 0.38,
-        gloss: isBoost ? 0.9 : 0.58,
+        metalness: isBoost ? 0.15 : 0.45,
+        gloss: isBoost ? 0.92 : 0.62,
+        clearCoat: isBoost ? 0.65 : 0.34,
+        clearCoatGloss: 0.85,
       });
       const glowMat = this.#standardMaterial({
         color: glowHex,
         emissive: glowHex,
         emissiveIntensity: isBoost ? 1.0 : this.theme.emissive.obstacleBase * 1.15,
-        metalness: 0.22,
-        gloss: isBoost ? 0.95 : 0.7,
+        metalness: isBoost ? 0.2 : 0.32,
+        gloss: isBoost ? 0.95 : 0.72,
+        clearCoat: isBoost ? 0.45 : 0.22,
+        clearCoatGloss: 0.9,
       });
 
       const root = this.#buildObstacleEntity(profile.type, bodyMat, accentMat, glowMat);
@@ -692,7 +864,246 @@ export class PlayCanvasWorld {
     return ring;
   }
 
-  #standardMaterial({ color = 0xffffff, emissive, emissiveIntensity = 0, metalness = 0, gloss = 0.5, opacity = 1, blendType = pc.BLEND_NONE }) {
+  #createProceduralSkyGradientTexture() {
+    const device = this.app.graphicsDevice;
+    const w = 2;
+    const h = 640;
+    const tex = new pc.Texture(device, {
+      width: w,
+      height: h,
+      format: pc.PIXELFORMAT_R8_G8_B8_A8,
+      mipmaps: false,
+      minFilter: pc.FILTER_LINEAR,
+      magFilter: pc.FILTER_LINEAR,
+      addressU: pc.ADDRESS_CLAMP_TO_EDGE,
+      addressV: pc.ADDRESS_CLAMP_TO_EDGE,
+    });
+    const deep = this.#colorFromHex(this.theme.palette.sceneBackground);
+    const fogC = this.#colorFromHex(this.theme.palette.fogColor);
+    const A = this.#colorFromHex(this.theme.palette.accentLightA ?? 0xff5bb7);
+    const B = this.#colorFromHex(this.theme.palette.accentLightB ?? 0x51d9ff);
+    const pixels = tex.lock();
+    const smooth = (e0, e1, x) => {
+      const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+      return t * t * (3 - 2 * t);
+    };
+    for (let y = 0; y < h; y += 1) {
+      const v = y / (h - 1);
+      let r = deep.r * 0.35 + fogC.r * 0.65;
+      let g = deep.g * 0.35 + fogC.g * 0.65;
+      let b = deep.b * 0.4 + fogC.b * 0.6;
+      const hBand = smooth(0.1, 0.38, v) * (1 - smooth(0.34, 0.56, v));
+      r += B.r * 0.55 * hBand;
+      g += B.g * 0.62 * hBand;
+      b += B.b * 0.7 * hBand;
+      const aur = smooth(0.42, 0.5, v) * (1 - smooth(0.5, 0.62, v));
+      r += (A.r * 0.85 + B.r * 0.25) * aur * 1.15;
+      g += (A.g * 0.45 + B.g * 0.55) * aur * 1.05;
+      b += (A.b * 0.35 + B.b * 0.65) * aur * 1.1;
+      const topFade = smooth(0.68, 1.0, v);
+      r = r * (1 - topFade * 0.65) + deep.r * 0.12 * topFade;
+      g = g * (1 - topFade * 0.65) + deep.g * 0.1 * topFade;
+      b = b * (1 - topFade * 0.55) + deep.b * 0.15 * topFade;
+      const tw = 1 + Math.sin(y * 0.08) * 0.04 + Math.sin(y * 0.19) * 0.02;
+      r *= tw;
+      g *= tw;
+      b *= tw;
+      for (let x = 0; x < w; x += 1) {
+        const i = (y * w + x) * 4;
+        pixels[i] = Math.min(255, Math.floor(r * 255));
+        pixels[i + 1] = Math.min(255, Math.floor(g * 255));
+        pixels[i + 2] = Math.min(255, Math.floor(b * 255));
+        pixels[i + 3] = 255;
+      }
+    }
+    tex.unlock();
+    return tex;
+  }
+
+  #buildCinematicSky() {
+    this._skyPhase = 0;
+    this.skyRoot = new pc.Entity("cinematicSky");
+    this.app.root.addChild(this.skyRoot);
+
+    const grad = this.#createProceduralSkyGradientTexture();
+    const domeMat = new pc.StandardMaterial();
+    domeMat.diffuse.set(0, 0, 0);
+    domeMat.emissive.set(1, 1, 1);
+    domeMat.emissiveMap = grad;
+    domeMat.emissiveIntensity = 1.12;
+    domeMat.useLighting = false;
+    domeMat.depthWrite = false;
+    domeMat.cull = pc.CULLFACE_FRONT;
+    domeMat.update();
+    this.skyDomeMaterial = domeMat;
+
+    const dome = new pc.Entity("skyGradientDome");
+    dome.addComponent("render", { type: "sphere" });
+    dome.render.material = domeMat;
+    dome.render.layers = [pc.LAYERID_SKYBOX];
+    dome.render.castShadows = false;
+    dome.render.receiveShadows = false;
+    dome.setLocalScale(480, 480, 480);
+    this.skyRoot.addChild(dome);
+
+    this.megaRingMaterial = new pc.StandardMaterial();
+    this.megaRingMaterial.diffuse.set(0, 0, 0);
+    this.megaRingMaterial.emissive = this.#colorFromHex(this.theme.palette.accentLightB ?? 0x51d9ff);
+    this.megaRingMaterial.emissiveIntensity = 0.72;
+    this.megaRingMaterial.useLighting = false;
+    this.megaRingMaterial.depthWrite = false;
+    this.megaRingMaterial.blendType = pc.BLEND_ADDITIVE;
+    this.megaRingMaterial.opacity = 1;
+    this.megaRingMaterial.update();
+
+    this.megaRing = new pc.Entity("skyMegaRing");
+    this.megaRing.addComponent("render", { type: "torus" });
+    this.megaRing.render.material = this.megaRingMaterial;
+    this.megaRing.render.layers = [pc.LAYERID_SKYBOX];
+    this.megaRing.render.castShadows = false;
+    this.megaRing.render.receiveShadows = false;
+    this.megaRing.setLocalScale(110, 110, 110);
+    this.megaRing.setLocalEulerAngles(72, 20, 0);
+    this.megaRing.setLocalPosition(12, -8, -40);
+    this.skyRoot.addChild(this.megaRing);
+
+    this.auroraStrips = [];
+    for (let i = 0; i < SKY_AURORA_STRIPS; i += 1) {
+      const useA = i % 2 === 0;
+      const stripMat = new pc.StandardMaterial();
+      stripMat.diffuse.set(0, 0, 0);
+      stripMat.emissive = useA
+        ? this.#colorFromHex(this.theme.palette.accentLightA ?? 0xff5bb7)
+        : this.#colorFromHex(this.theme.palette.accentLightB ?? 0x51d9ff);
+      const be = 0.55 + this.rng.range(0, 0.35);
+      stripMat.emissiveIntensity = be;
+      stripMat.useLighting = false;
+      stripMat.depthWrite = false;
+      stripMat.blendType = pc.BLEND_ADDITIVE;
+      stripMat.opacity = 0.22 + this.rng.range(0, 0.12);
+      stripMat.update();
+      const strip = new pc.Entity(`auroraStrip_${i}`);
+      strip.addComponent("render", { type: "box" });
+      strip.render.material = stripMat;
+      strip.render.layers = [pc.LAYERID_SKYBOX];
+      strip.render.castShadows = false;
+      strip.render.receiveShadows = false;
+      strip.setLocalScale(120, 0.025, 32);
+      const xOff = this.rng.range(-35, 35);
+      const zOff = this.rng.range(-95, -25);
+      const yPos = this.rng.range(6, 26);
+      strip.setLocalPosition(xOff, yPos, zOff);
+      strip.setLocalEulerAngles(this.rng.range(55, 82), this.rng.range(-40, 40), this.rng.range(-8, 8));
+      this.skyRoot.addChild(strip);
+      this.auroraStrips.push({
+        entity: strip,
+        mat: stripMat,
+        baseEmissive: be,
+        baseOpacity: stripMat.opacity,
+        phase: this.rng.range(0, Math.PI * 2),
+        speed: this.rng.range(0.35, 0.95),
+        amp: this.rng.range(1.2, 3.5),
+        baseX: xOff,
+        baseY: yPos,
+        baseZ: zOff,
+      });
+    }
+
+    this.skyStarEntries = [];
+    for (let i = 0; i < SKY_STAR_COUNT; i += 1) {
+      const sm = new pc.StandardMaterial();
+      sm.diffuse.set(0, 0, 0);
+      const pick = this.rng.range(0, 1);
+      sm.emissive =
+        pick < 0.34
+          ? this.#colorFromHex(this.theme.palette.accentLightA ?? 0xff5bb7)
+          : pick < 0.67
+            ? this.#colorFromHex(this.theme.palette.accentLightB ?? 0x51d9ff)
+            : this.#colorFromHex(this.theme.palette.particleColor ?? 0xffd9ee);
+      const eb = this.rng.range(0.85, 2.4);
+      sm.emissiveIntensity = eb;
+      sm.useLighting = false;
+      sm.depthWrite = false;
+      sm.blendType = pc.BLEND_ADDITIVE;
+      sm.opacity = 0.35 + this.rng.range(0, 0.45);
+      sm.update();
+      const star = new pc.Entity(`skyStar_${i}`);
+      star.addComponent("render", { type: "box" });
+      star.render.material = sm;
+      star.render.layers = [pc.LAYERID_SKYBOX];
+      star.render.castShadows = false;
+      star.render.receiveShadows = false;
+      const sc = this.rng.range(0.04, 0.14);
+      star.setLocalScale(sc, sc, sc);
+      const u = this.rng.range(0, 1);
+      const v = this.rng.range(0.22, 0.88);
+      const theta = u * Math.PI * 2;
+      const phi = v * Math.PI * 0.72;
+      const rad = 155 + this.rng.range(0, 35);
+      star.setLocalPosition(
+        Math.sin(phi) * Math.cos(theta) * rad,
+        Math.cos(phi) * rad * 0.82 + this.rng.range(-2, 8),
+        Math.sin(phi) * Math.sin(theta) * rad
+      );
+      this.skyRoot.addChild(star);
+      this.skyStarEntries.push({ mat: sm, baseEmissive: eb, moodMul: 1 });
+    }
+  }
+
+  #syncCinematicSkyToCamera(state) {
+    if (!this.skyRoot) return;
+    const p = state.position;
+    const la = state.lookAt;
+    const t = performance.now() * 0.00006;
+    this.skyRoot.setPosition(p.x * 0.11 + la.x * 0.07, p.y * 0.14 + 4.2, p.z);
+    this.skyRoot.setEulerAngles(
+      Math.sin(t) * 3.2 + Math.sin(t * 0.31) * 1.1,
+      t * 11.5 + Math.cos(t * 0.17) * 4,
+      Math.cos(t * 0.43) * 1.8
+    );
+  }
+
+  #tickCinematicSky(dt) {
+    if (!this.skyRoot) return;
+    this._skyPhase += dt;
+    if (this.megaRing) {
+      this.megaRing.rotateLocal(0, 11 * dt, 0);
+    }
+    if (this.auroraStrips?.length) {
+      for (const s of this.auroraStrips) {
+        const w = Math.sin(this._skyPhase * s.speed + s.phase) * s.amp;
+        s.entity.setLocalPosition(s.baseX + w * 0.35, s.baseY, s.baseZ + w * 0.12);
+        const op = s.baseOpacity + Math.sin(this._skyPhase * 1.4 + s.phase) * 0.06;
+        s.mat.opacity = Math.max(0.08, Math.min(0.55, op));
+        s.mat.update();
+      }
+    }
+    if (this.skyStarEntries?.length) {
+      let i = 0;
+      for (const entry of this.skyStarEntries) {
+        const base = entry.baseEmissive;
+        const mood = entry.moodMul ?? 1;
+        entry.mat.emissiveIntensity =
+          base *
+          mood *
+          (0.72 + 0.42 * Math.sin(this._skyPhase * (2.1 + (i % 5) * 0.35) + i));
+        entry.mat.update();
+        i += 1;
+      }
+    }
+  }
+
+  #standardMaterial({
+    color = 0xffffff,
+    emissive,
+    emissiveIntensity = 0,
+    metalness = 0,
+    gloss = 0.5,
+    clearCoat = 0,
+    clearCoatGloss = 0.85,
+    opacity = 1,
+    blendType = pc.BLEND_NONE,
+  }) {
     const mat = new pc.StandardMaterial();
     mat.diffuse = this.#colorFromHex(color);
     if (emissive != null) {
@@ -702,6 +1113,10 @@ export class PlayCanvasWorld {
     mat.useMetalness = true;
     mat.metalness = metalness;
     mat.gloss = gloss;
+    if (clearCoat > 0) {
+      mat.clearCoat = clearCoat;
+      mat.clearCoatGloss = clearCoatGloss;
+    }
     if (opacity < 1 || blendType !== pc.BLEND_NONE) {
       mat.blendType = blendType;
       mat.opacity = opacity;

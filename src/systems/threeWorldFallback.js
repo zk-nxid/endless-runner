@@ -1,7 +1,22 @@
 import * as THREE from "three";
 import { CONFIG } from "../core/constants.js";
 
-const VOID_RAIN_COUNT = 40;
+function voidRainLaneExcludeHalf() {
+  const laneOuter = ((CONFIG.laneCount - 1) * CONFIG.laneWidth) / 2 + CONFIG.laneWidth * 0.5;
+  return laneOuter + CONFIG.laneWidth * 0.92;
+}
+
+const VOID_RAIN_COUNT = 10;
+const VOID_RAIN_GRAVITY = 13;
+const VOID_JUNK_CLUSTER_SCALE = 2.45;
+const VOID_RAIN_VANISH_Y = -118;
+const VOID_RAIN_VIRTUAL_TOP_MIN = 68;
+const VOID_RAIN_VIRTUAL_TOP_MAX = 102;
+const VOID_RAIN_SPAWN_DEPTH_MIN = 5;
+const VOID_RAIN_SPAWN_DEPTH_MAX = 36;
+const VOID_RAIN_RESPAWN_DEPTH_MIN = 2.5;
+const VOID_RAIN_RESPAWN_DEPTH_MAX = 20;
+const VOID_RAIN_X_OUTER = 132;
 
 export class ThreeWorldFallback {
   constructor(scene, theme, rng, obstaclePoolSize) {
@@ -9,10 +24,8 @@ export class ThreeWorldFallback {
     this.theme = theme;
     this.rng = rng;
     this.trackCenterOffsetZ = -300;
-    this.skylineLoopDistance = 16 * 26;
     this.obstaclePool = [];
     this.laneLights = [];
-    this.skyline = [];
     this._voidRainPrevTime = null;
 
     this.scene.background = new THREE.Color(this.theme.palette.sceneBackground);
@@ -23,8 +36,8 @@ export class ThreeWorldFallback {
     );
 
     this.#buildGround();
+    this.#buildCinematicSkyBackdrop();
     this.#buildLaneLights();
-    this.#buildSkyline();
     this.#buildVoidRain();
     this.#buildObstaclePool(obstaclePoolSize);
   }
@@ -63,12 +76,6 @@ export class ThreeWorldFallback {
       line.material.opacity =
         0.06 + (idx % ghostCount === 0 ? 0.26 : 0.08) + intensity * 0.14;
     });
-    this.skyline.forEach((tower) => {
-      tower.traverse((child) => {
-        if (!child.isMesh || !child.material) return;
-        child.material.opacity = 0.14 + intensity * 0.2;
-      });
-    });
     if (this.ground?.material?.color) {
       const darkGround = new THREE.Color(this.theme.palette.groundColor);
       const lightGround = new THREE.Color(this.theme.palette.lightGroundColor ?? 0xd6c8a4);
@@ -98,10 +105,19 @@ export class ThreeWorldFallback {
     });
 
     if (this.voidRain?.length) {
-      const baseOpacity = 0.1 + intensity * 0.12 + paletteShift * 0.05;
+      const baseOpacity = 0.5 + intensity * 0.3 + paletteShift * 0.08;
+      const emissiveInt = 0.32 + intensity * 0.52 + paletteShift * 0.14;
       this.voidRain.forEach((entry) => {
-        entry.mesh.material.opacity = Math.min(0.28, baseOpacity);
+        for (const mat of entry.materials) {
+          mat.opacity = Math.min(0.94, baseOpacity);
+          mat.emissiveIntensity = emissiveInt;
+        }
       });
+    }
+
+    if (this.cinematicSkyRingMat) {
+      const m = Math.max(0, Math.min(1, intensity));
+      this.cinematicSkyRingMat.opacity = 0.28 + m * 0.28;
     }
   }
 
@@ -118,28 +134,37 @@ export class ThreeWorldFallback {
     this.laneLights.forEach((line) => {
       line.position.z = z;
     });
-    this.skyline.forEach((tower, idx) => {
-      if (tower.position.z > bodyZ + 12) {
-        tower.position.z -= this.skylineLoopDistance;
-      }
-      tower.rotation.z = Math.sin(bodyZ * 0.03 + idx * 0.7) * 0.06;
-    });
+    if (this.cinematicSkyGroup) {
+      this.cinematicSkyGroup.position.set(bodyZ * 0.025, 4.6, bodyZ * 0.92);
+      const t = now * 0.00035;
+      this.cinematicSkyGroup.rotation.set(
+        Math.sin(t) * 0.04,
+        t * 0.22,
+        Math.cos(t * 0.4) * 0.03
+      );
+    }
 
     if (this.voidRain?.length) {
       const t = now * 0.001;
       const behindZ = bodyZ + 14;
-      const floorY = -2;
       for (const entry of this.voidRain) {
-        const m = entry.mesh;
-        let y = m.position.y - entry.fallSpeed * dt;
-        let x = m.position.x + Math.sin(t * 0.35 + entry.phase) * 0.022 * dt;
-        let zPos = m.position.z;
-        if (y < floorY || zPos > behindZ) {
-          y = this.rng.range(20, 48);
-          x = this.rng.range(-36, 36);
+        const g = entry.group;
+        g.rotation.x += entry.spin.x * dt;
+        g.rotation.y += entry.spin.y * dt;
+        g.rotation.z += entry.spin.z * dt;
+        entry.fallVel += VOID_RAIN_GRAVITY * dt;
+        let y = g.position.y - entry.fallVel * dt;
+        let x = g.position.x + Math.sin(t * 0.35 + entry.phase) * 0.018 * dt;
+        x = this.#clampVoidRainX(x, g.position.x);
+        let zPos = g.position.z;
+        if (y < VOID_RAIN_VANISH_Y || zPos > behindZ) {
+          const kin = this.#sampleVoidJunkKinematics(true);
+          y = kin.y;
+          x = this.#sampleVoidRainX();
           zPos = bodyZ - this.rng.range(45, 200);
+          entry.fallVel = kin.fallVel;
         }
-        m.position.set(x, y, zPos);
+        g.position.set(x, y, zPos);
       }
     }
   }
@@ -150,10 +175,58 @@ export class ThreeWorldFallback {
       metalness: 0.12,
       roughness: 0.92,
     });
-    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(30, 700), mat);
+    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(CONFIG.runwayStripWidth, 700), mat);
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.z = -300;
+    this.ground.receiveShadow = true;
     this.scene.add(this.ground);
+  }
+
+  #buildCinematicSkyBackdrop() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 4;
+    canvas.height = 640;
+    const ctx = canvas.getContext("2d");
+    const hex = (h) => {
+      const n = typeof h === "number" ? h : 0;
+      return `#${n.toString(16).padStart(6, "0")}`;
+    };
+    const g = ctx.createLinearGradient(0, 0, 0, 640);
+    g.addColorStop(0, hex(this.theme.palette.sceneBackground));
+    g.addColorStop(0.14, hex(this.theme.palette.accentLightB ?? 0x51d9ff));
+    g.addColorStop(0.28, hex(this.theme.palette.fogColor));
+    g.addColorStop(0.46, hex(this.theme.palette.accentLightA ?? 0xff5bb7));
+    g.addColorStop(0.56, hex(this.theme.palette.accentLightB ?? 0x51d9ff));
+    g.addColorStop(0.72, hex(this.theme.palette.sceneBackground));
+    g.addColorStop(1, hex(this.theme.palette.sceneBackground));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 4, 640);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.skyGradientMat = new THREE.MeshBasicMaterial({
+      map: tex,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(185, 40, 28), this.skyGradientMat);
+    sky.renderOrder = -999;
+    this.cinematicSkyRingMat = new THREE.MeshBasicMaterial({
+      color: this.theme.palette.accentLightB ?? 0x51d9ff,
+      transparent: true,
+      opacity: 0.34,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+    });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(92, 0.45, 10, 72), this.cinematicSkyRingMat);
+    ring.rotation.x = Math.PI * 0.49;
+    ring.rotation.y = Math.PI * 0.12;
+    ring.position.set(9, -10, -52);
+    ring.renderOrder = -998;
+    this.cinematicSkyGroup = new THREE.Group();
+    this.cinematicSkyGroup.add(sky, ring);
+    this.scene.add(this.cinematicSkyGroup);
   }
 
   #buildLaneLights() {
@@ -175,73 +248,169 @@ export class ThreeWorldFallback {
     }
   }
 
-  #buildSkyline() {
-    const bodyMat = new THREE.MeshBasicMaterial({ color: 0x2c1f38, transparent: true, opacity: 0.22 });
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: this.theme.palette.accentLightA ?? this.theme.palette.laneLightColor,
+  #threeJunkTrack(materials, mat) {
+    if (!materials.includes(mat)) materials.push(mat);
+  }
+
+  #threeJunkMat(hex, opts = {}) {
+    const ec = new THREE.Color(hex);
+    const rough = 1 - (opts.gloss ?? 0.56);
+    return new THREE.MeshStandardMaterial({
+      color: opts.diffuse != null ? new THREE.Color(opts.diffuse) : ec.clone(),
+      emissive: ec,
+      emissiveIntensity: opts.emissiveIntensity ?? 0.42,
+      metalness: opts.metalness ?? 0.4,
+      roughness: opts.roughness ?? rough,
       transparent: true,
-      opacity: 0.2,
+      opacity: opts.opacity ?? 0.82,
+      depthWrite: false,
     });
-    const windowMat = new THREE.MeshBasicMaterial({
-      color: this.theme.palette.accentLightB ?? this.theme.palette.laneGhostColor,
-      transparent: true,
-      opacity: 0.22,
-    });
-    for (let i = 0; i < 16; i += 1) {
-      const width = this.rng.range(1.7, 3.3);
-      const height = this.rng.range(2.8, 6.5);
-      const tower = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.18), bodyMat);
-      const crown = new THREE.Mesh(new THREE.BoxGeometry(width * 0.72, 0.26, 0.14), glowMat);
-      crown.position.y = height * 0.5 + 0.16;
-      tower.add(body, crown);
-      for (let row = 0; row < 3; row += 1) {
-        for (let col = 0; col < 2; col += 1) {
-          const w = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.26, 0.03), windowMat);
-          w.position.set(-0.35 + col * 0.7, -height * 0.3 + row * (height / 4), 0.11);
-          tower.add(w);
-        }
-      }
-      const side = i % 2 === 0 ? -1 : 1;
-      tower.position.set(side * this.rng.range(6.2, 11.2), this.rng.range(2.6, 5.8), -40 - i * 26);
-      tower.rotation.y = side > 0 ? -0.2 : 0.2;
-      this.skyline.push(tower);
-      this.scene.add(tower);
+  }
+
+  #threeJunkBox(group, materials, mat, sx, sy, sz, px, py, pz, rx = 0, ry = 0, rz = 0) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+    m.position.set(px, py, pz);
+    m.rotation.set(rx, ry, rz);
+    m.castShadow = false;
+    m.receiveShadow = false;
+    group.add(m);
+    this.#threeJunkTrack(materials, mat);
+  }
+
+  #threeVoidRainRing(group, materials, mat, ringRadius, thickness, segments) {
+    for (let i = 0; i < segments; i += 1) {
+      const theta = (i / segments) * Math.PI * 2;
+      const nextTheta = ((i + 1) / segments) * Math.PI * 2;
+      const chord = Math.max(
+        0.02,
+        ringRadius * Math.hypot(Math.cos(nextTheta) - Math.cos(theta), Math.sin(nextTheta) - Math.sin(theta))
+      );
+      const part = new THREE.Mesh(new THREE.BoxGeometry(chord, thickness, thickness), mat);
+      part.position.set(Math.cos(theta) * ringRadius, Math.sin(theta) * ringRadius, 0);
+      part.rotation.z = theta;
+      part.castShadow = false;
+      part.receiveShadow = false;
+      group.add(part);
     }
+    this.#threeJunkTrack(materials, mat);
+  }
+
+  /** Lane obstacle composites (no boost pad) for void rain — matches PlayCanvas set. */
+  #createThreeVoidRainCluster() {
+    const group = new THREE.Group();
+    const materials = [];
+    const pal = this.theme.palette;
+    const useAccentLead = this.rng.next() > 0.5;
+    const baseHex = useAccentLead ? pal.obstacleAccentColor : pal.obstacleBaseColor;
+    const accentHex = useAccentLead ? pal.obstacleBaseColor : pal.obstacleAccentColor;
+    const glowHex = pal.playerColor;
+    const emBase = this.theme.emissive.obstacleBase;
+
+    const bodyMat = this.#threeJunkMat(baseHex, {
+      emissiveIntensity: emBase,
+      metalness: 0.42,
+      gloss: 0.55,
+    });
+    const accentMat = this.#threeJunkMat(accentHex, {
+      emissiveIntensity: emBase * 0.85,
+      metalness: 0.45,
+      gloss: 0.62,
+    });
+    const glowMat = this.#threeJunkMat(glowHex, {
+      emissiveIntensity: emBase * 1.15,
+      metalness: 0.32,
+      gloss: 0.72,
+    });
+
+    const types = ["luggage", "keycardPillar", "neonArch", "tower"];
+    const type = types[Math.floor(this.rng.range(0, 4))];
+    const s = VOID_JUNK_CLUSTER_SCALE * this.rng.range(0.88, 1.08);
+
+    if (type === "luggage") {
+      this.#threeJunkBox(group, materials, bodyMat, 1.05 * s, 0.82 * s, 0.72 * s, 0, 0, 0);
+      const handle = new THREE.Group();
+      this.#threeVoidRainRing(handle, materials, accentMat, 0.18 * s, 0.04 * s, 14);
+      handle.position.set(0, 0.5 * s, 0);
+      handle.rotation.x = Math.PI / 2;
+      group.add(handle);
+      this.#threeJunkBox(group, materials, glowMat, 1.08 * s, 0.14 * s, 0.06 * s, 0, 0.08 * s, 0.37 * s);
+    } else if (type === "keycardPillar") {
+      this.#threeJunkBox(group, materials, bodyMat, 0.62 * s, 1.5 * s, 0.13 * s, 0, 0, 0);
+      this.#threeJunkBox(group, materials, accentMat, 0.16 * s, 0.16 * s, 0.05 * s, 0, 0.18 * s, 0.09 * s);
+      this.#threeJunkBox(group, materials, glowMat, 0.44 * s, 0.08 * s, 0.02 * s, 0, -0.3 * s, 0.085 * s);
+    } else if (type === "neonArch") {
+      const archRing = new THREE.Group();
+      this.#threeVoidRainRing(archRing, materials, accentMat, 0.46 * s, 0.12 * s, 24);
+      group.add(archRing);
+      this.#threeJunkBox(group, materials, bodyMat, 0.2 * s, 0.66 * s, 0.2 * s, -0.44 * s, -0.45 * s, 0);
+      this.#threeJunkBox(group, materials, bodyMat, 0.2 * s, 0.66 * s, 0.2 * s, 0.44 * s, -0.45 * s, 0);
+      this.#threeJunkBox(group, materials, glowMat, 0.6 * s, 0.14 * s, 0.06 * s, 0, 0.12 * s, 0);
+    } else {
+      this.#threeJunkBox(group, materials, bodyMat, 1.4 * s, 3.2 * s, 1.2 * s, 0, 0, 0);
+      this.#threeJunkBox(group, materials, accentMat, 1.12 * s, 0.38 * s, 1.02 * s, 0, 1.72 * s, 0);
+      this.#threeJunkBox(group, materials, glowMat, 1.46 * s, 0.2 * s, 0.08 * s, 0, 1.35 * s, 0.62 * s);
+    }
+
+    return { group, materials };
+  }
+
+  #sampleVoidJunkKinematics(recycle) {
+    const H = this.rng.range(VOID_RAIN_VIRTUAL_TOP_MIN, VOID_RAIN_VIRTUAL_TOP_MAX);
+    const yHi = H - 0.35;
+    if (!recycle) {
+      const depth = this.rng.range(VOID_RAIN_SPAWN_DEPTH_MIN, VOID_RAIN_SPAWN_DEPTH_MAX);
+      const y = Math.min(H - depth, yHi);
+      const fallVel = Math.sqrt(Math.max(0, 2 * VOID_RAIN_GRAVITY * depth));
+      return { y, fallVel };
+    }
+    const depth = this.rng.range(VOID_RAIN_RESPAWN_DEPTH_MIN, VOID_RAIN_RESPAWN_DEPTH_MAX);
+    const y = Math.min(H - depth, yHi);
+    const fallVel = Math.sqrt(Math.max(0, 2 * VOID_RAIN_GRAVITY * depth));
+    return { y, fallVel };
+  }
+
+  #sampleVoidRainX() {
+    const inner = voidRainLaneExcludeHalf();
+    if (this.rng.next() < 0.5) {
+      return this.rng.range(-VOID_RAIN_X_OUTER, -inner);
+    }
+    return this.rng.range(inner, VOID_RAIN_X_OUTER);
+  }
+
+  #clampVoidRainX(x, prevX) {
+    const inner = voidRainLaneExcludeHalf();
+    if (x > -inner && x < inner) {
+      const dir = Math.sign(prevX) || (this.rng.next() < 0.5 ? -1 : 1);
+      return dir * (inner + 0.38);
+    }
+    return x;
   }
 
   #buildVoidRain() {
     this.voidRain = [];
-    const palette = this.theme.palette;
-    const colors = [
-      new THREE.Color(palette.accentLightA ?? palette.laneLightColor),
-      new THREE.Color(palette.accentLightB ?? palette.laneGhostColor),
-      new THREE.Color(palette.particleColor ?? 0xffd9ee),
-    ];
     const bodyZ = 0;
     for (let i = 0; i < VOID_RAIN_COUNT; i += 1) {
-      const color = colors[i % colors.length].clone();
-      const mat = new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.14,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      });
-      const w = this.rng.range(0.04, 0.09);
-      const h = this.rng.range(0.55, 1.35);
-      const d = this.rng.range(0.04, 0.08);
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      mesh.position.set(
-        this.rng.range(-34, 34),
-        this.rng.range(18, 46),
-        bodyZ - this.rng.range(40, 200)
+      const { group, materials } = this.#createThreeVoidRainCluster();
+      this.scene.add(group);
+      const x = this.#sampleVoidRainX();
+      const z = bodyZ - this.rng.range(40, 200);
+      const { y, fallVel } = this.#sampleVoidJunkKinematics(false);
+      group.position.set(x, y, z);
+      group.rotation.set(
+        this.rng.range(0, Math.PI * 2),
+        this.rng.range(0, Math.PI * 2),
+        this.rng.range(0, Math.PI * 2)
       );
-      this.scene.add(mesh);
       this.voidRain.push({
-        mesh,
-        fallSpeed: this.rng.range(2.2, 5.8),
+        group,
+        materials,
+        fallVel,
         phase: this.rng.range(0, Math.PI * 2),
+        spin: {
+          x: this.rng.range(-0.9, 0.9),
+          y: this.rng.range(-0.9, 0.9),
+          z: this.rng.range(-0.9, 0.9),
+        },
       });
     }
   }
@@ -315,6 +484,17 @@ export class ThreeWorldFallback {
         mesh = padGroup;
       }
       mesh.visible = false;
+      if (mesh.traverse) {
+        mesh.traverse((ch) => {
+          if (ch.isMesh) {
+            ch.castShadow = true;
+            ch.receiveShadow = true;
+          }
+        });
+      } else if (mesh.isMesh) {
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
       mesh.userData.baseColor = new THREE.Color(baseColor);
       mesh.userData.useAccent = useAccent && !isBoost;
       mesh.userData.isBoost = isBoost;
