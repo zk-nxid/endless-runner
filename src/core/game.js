@@ -109,13 +109,13 @@ export class Game {
     this.trailSystem.setRunActive(false);
 
     this.rng = new SeededRng(42);
-    this.input = new InputSystem(worldCanvas);
+    this.audio = new AudioSystem();
+    this.input = new InputSystem(worldCanvas, () => this.audio.unlockFromUserGesture());
     this.movement = new MovementSystem();
     this.difficulty = new DifficultySystem();
     this.spawner = new SpawnerSystem(this.rng);
     this.cameraSystem = new CameraSystem();
     this.ui = new UiSystem();
-    this.audio = new AudioSystem();
 
     this.leaderboard = new LeaderboardAdapter();
     this.emailCapture = new EmailCaptureAdapter();
@@ -133,6 +133,7 @@ export class Game {
     this.audio.setMenuMode(true);
 
     this.cameraSystem.reset({ x: 0, y: CONFIG.playerBaseY, z: 0 });
+    this.#installAudioUnlockGestures();
     this.#bindUi();
     this.#onResize();
     window.addEventListener("resize", () => this.#onResize());
@@ -378,6 +379,18 @@ export class Game {
     return obstacles;
   }
 
+  #installAudioUnlockGestures() {
+    const unlock = () => this.audio.unlockFromUserGesture();
+    const opts = { capture: true, passive: true };
+    window.addEventListener("pointerdown", unlock, opts);
+    window.addEventListener("touchstart", unlock, opts);
+    window.addEventListener("touchend", unlock, opts);
+    window.addEventListener("click", unlock, opts);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") unlock();
+    });
+  }
+
   #bindUi() {
     const startButton = document.getElementById("start-button");
     const retryButton = document.getElementById("retry-button");
@@ -388,7 +401,7 @@ export class Game {
     const menuButtons = [startButton, retryButton, submitButton, endMenuButton].filter(Boolean);
 
     const playHoverClick = () => {
-      this.audio.start().catch(() => {});
+      this.audio.unlockFromUserGesture();
       this.audio.playUiHoverSfx();
     };
     menuButtons.forEach((button) => {
@@ -771,7 +784,8 @@ export class Game {
     this.deathSequenceTimer = 0;
     this.paused = false;
     this.input.consume();
-    this.audio.start().catch(() => {});
+    this.audio.unlockFromUserGesture();
+    void this.audio.start();
     this.audio.setMenuMode(false);
     this.playerMesh.visible = true;
     if (this.nameInput) this.nameInput.value = "";

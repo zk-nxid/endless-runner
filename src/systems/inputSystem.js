@@ -1,5 +1,5 @@
 export class InputSystem {
-  constructor(canvas) {
+  constructor(canvas, onUserPointer) {
     this.commandQueue = [];
     this.lastTouch = null;
 
@@ -16,9 +16,14 @@ export class InputSystem {
       }
     });
 
-    canvas.addEventListener("pointerdown", (event) => {
-      this.lastTouch = { x: event.clientX, y: event.clientY };
-    });
+    canvas.addEventListener(
+      "pointerdown",
+      (event) => {
+        onUserPointer?.();
+        this.lastTouch = { x: event.clientX, y: event.clientY };
+      },
+      { passive: true }
+    );
 
     canvas.addEventListener("pointerup", (event) => {
       if (!this.lastTouch) return;

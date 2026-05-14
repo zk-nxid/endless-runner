@@ -74,18 +74,37 @@ export class AudioSystem {
   }
 
   async start() {
+    this.unlockFromUserGesture();
+    if (!this.context) return;
+    if (this.context.state !== "running") {
+      try {
+        await this.context.resume();
+      } catch (_) {}
+    }
+  }
+
+  /**
+   * Mobile browsers keep Web Audio suspended until a *user gesture* runs a synchronous
+   * `resume()` (often touchstart / pointerdown). Call this from those handlers — not only from async flows.
+   */
+  unlockFromUserGesture() {
     if (!window.AudioContext && !window.webkitAudioContext) return;
     if (!this.context) {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      this.context = new Ctx();
-      this.#buildGraph();
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        this.context = new Ctx();
+        this.#buildGraph();
+      } catch (_) {
+        return;
+      }
     }
-
-    if (this.context.state !== "running") {
-      await this.context.resume();
+    const ctx = this.context;
+    if (ctx.state === "suspended") {
+      try {
+        void ctx.resume();
+      } catch (_) {}
     }
-
-    this.#applyMixVolumes(this.context.currentTime, 0.12);
+    this.#applyMixVolumes(ctx.currentTime, 0.12);
     this.#startScheduler();
   }
 
