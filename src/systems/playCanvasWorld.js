@@ -47,6 +47,7 @@ export class PlayCanvasWorld {
     this.obstaclePoolSize = obstaclePoolSize;
     this.trackCenterOffsetZ = -300;
     this._trackBodyZ = 0;
+    this._skyLocalPos = new pc.Vec3();
 
     this.app = new pc.Application(canvas, {
       graphicsDeviceOptions: { antialias: true, powerPreference: "high-performance" },
@@ -67,7 +68,6 @@ export class PlayCanvasWorld {
     this.#initCinematicFrame();
     this.app.on("update", (dt) => {
       this.cameraFrame?.update(dt);
-      this.#tickCinematicSky(dt);
       this.#tickDust(dt);
       this.#tickVoidRain(dt);
     });
@@ -83,6 +83,15 @@ export class PlayCanvasWorld {
       this.cameraEntity.camera.fov = state.fov;
     }
     this.#syncCinematicSkyToCamera(state);
+  }
+
+  /**
+   * Advance sky motion on the same wall-clock step as `setCamera` / mood (Game RAF).
+   * Keeping `_skyPhase` off PlayCanvas' separate update tick avoids phase drift vs sky euler
+   * and removes subtle brightness pops at long runs / rebases.
+   */
+  advanceSkyDecor(dt) {
+    this.#tickCinematicSky(dt);
   }
 
   setMoodIntensity(intensity, paletteShift = 0) {
@@ -228,6 +237,28 @@ export class PlayCanvasWorld {
     }
   }
 
+  /**
+   * Floating origin — shift decorative props that store absolute world Z.
+   * Called from Game when sim coordinates are rebased (long-run float32 safety).
+   */
+  rebaseWorldZ(delta) {
+    if (!delta) return;
+    if (this.dustMotes?.length) {
+      for (const entry of this.dustMotes) {
+        const e = entry.entity;
+        const pos = e.getPosition();
+        e.setPosition(pos.x, pos.y, pos.z + delta);
+      }
+    }
+    if (this.voidRain?.length) {
+      for (const entry of this.voidRain) {
+        const e = entry.entity;
+        const p = e.getPosition();
+        e.setPosition(p.x, p.y, p.z + delta);
+      }
+    }
+  }
+
   resize(w, h) {
     this.app.resizeCanvas(w, h);
   }
@@ -277,12 +308,9 @@ export class PlayCanvasWorld {
     cf.rendering.samples = 2;
     cf.bloom.intensity = 0.032;
     cf.bloom.blurLevel = 12;
-    cf.ssao.type = pc.SSAOTYPE_COMBINE;
-    cf.ssao.intensity = 0.32;
-    cf.ssao.radius = 22;
-    cf.ssao.samples = 9;
-    cf.ssao.power = 4.5;
-    cf.ssao.blurEnabled = true;
+    // SSAO "combine" darkens the whole HDR composite when depth is tight to farClip
+    // or after long runs; sky/emissive then read as black. Sky is drawn without depth.
+    cf.ssao.type = typeof pc.SSAOTYPE_NONE !== "undefined" ? pc.SSAOTYPE_NONE : "none";
     cf.grading.enabled = true;
     cf.grading.saturation = 1.08;
     cf.grading.contrast = 1.07;
@@ -308,7 +336,9 @@ export class PlayCanvasWorld {
       clearColor: this.#colorFromHex(this.theme.palette.sceneBackground),
       fov: CONFIG.camera.fov,
       nearClip: 0.1,
-      farClip: 300,
+      // Default 300 sat almost inside the ~240-radius sky sphere; tiny margin + depth
+      // precision loss at long runs clips the backdrop to clearColor (reads as "black void").
+      farClip: 12000,
     });
     this.app.root.addChild(this.cameraEntity);
   }
@@ -462,6 +492,7 @@ export class PlayCanvasWorld {
       clearCoatGloss: 0.82,
     });
     mat.depthWrite = false;
+    mat.useFog = false;
     mat.update();
     return mat;
   }
@@ -923,7 +954,7 @@ export class PlayCanvasWorld {
   #buildCinematicSky() {
     this._skyPhase = 0;
     this.skyRoot = new pc.Entity("cinematicSky");
-    this.app.root.addChild(this.skyRoot);
+    this.cameraEntity.addChild(this.skyRoot);
 
     const grad = this.#createProceduralSkyGradientTexture();
     const domeMat = new pc.StandardMaterial();
@@ -932,6 +963,7 @@ export class PlayCanvasWorld {
     domeMat.emissiveMap = grad;
     domeMat.emissiveIntensity = 1.12;
     domeMat.useLighting = false;
+    domeMat.useFog = false;
     domeMat.depthWrite = false;
     domeMat.cull = pc.CULLFACE_FRONT;
     domeMat.update();
@@ -951,6 +983,7 @@ export class PlayCanvasWorld {
     this.megaRingMaterial.emissive = this.#colorFromHex(this.theme.palette.accentLightB ?? 0x51d9ff);
     this.megaRingMaterial.emissiveIntensity = 0.72;
     this.megaRingMaterial.useLighting = false;
+    this.megaRingMaterial.useFog = false;
     this.megaRingMaterial.depthWrite = false;
     this.megaRingMaterial.blendType = pc.BLEND_ADDITIVE;
     this.megaRingMaterial.opacity = 1;
@@ -978,6 +1011,7 @@ export class PlayCanvasWorld {
       const be = 0.55 + this.rng.range(0, 0.35);
       stripMat.emissiveIntensity = be;
       stripMat.useLighting = false;
+      stripMat.useFog = false;
       stripMat.depthWrite = false;
       stripMat.blendType = pc.BLEND_ADDITIVE;
       stripMat.opacity = 0.22 + this.rng.range(0, 0.12);
@@ -1023,6 +1057,7 @@ export class PlayCanvasWorld {
       const eb = this.rng.range(0.85, 2.4);
       sm.emissiveIntensity = eb;
       sm.useLighting = false;
+      sm.useFog = false;
       sm.depthWrite = false;
       sm.blendType = pc.BLEND_ADDITIVE;
       sm.opacity = 0.35 + this.rng.range(0, 0.45);
@@ -1054,12 +1089,27 @@ export class PlayCanvasWorld {
     if (!this.skyRoot) return;
     const p = state.position;
     const la = state.lookAt;
-    const t = performance.now() * 0.00006;
-    this.skyRoot.setPosition(p.x * 0.11 + la.x * 0.07, p.y * 0.14 + 4.2, p.z);
+    // Match previous `performance.now() * 0.00006` scale using game-driven phase (seconds).
+    const tEff = this._skyPhase * 0.06;
+    const c = this.cameraEntity.getPosition();
+    // Tiny world-space parallax deltas → camera-local offsets via orthonormal axes only.
+    // Inverting camWorld.matrix still folds in massive translations and intermittently blows up at
+    // extreme run distance / speeds; dot-products with camera right/up/forward stay stable.
+    const wx = p.x * 0.11 + la.x * 0.07 - c.x;
+    const wy = p.y * 0.14 + 4.2 - c.y;
+    const wz = 0;
+    const r = this.cameraEntity.right;
+    const u = this.cameraEntity.up;
+    const f = this.cameraEntity.forward;
+    const lx = wx * r.x + wy * r.y + wz * r.z;
+    const ly = wx * u.x + wy * u.y + wz * u.z;
+    const lz = wx * f.x + wy * f.y + wz * f.z;
+    this._skyLocalPos.set(lx, ly, lz);
+    this.skyRoot.setLocalPosition(lx, ly, lz);
     this.skyRoot.setEulerAngles(
-      Math.sin(t) * 3.2 + Math.sin(t * 0.31) * 1.1,
-      t * 11.5 + Math.cos(t * 0.17) * 4,
-      Math.cos(t * 0.43) * 1.8
+      Math.sin(tEff) * 3.2 + Math.sin(tEff * 0.31) * 1.1,
+      tEff * 11.5 + Math.cos(tEff * 0.17) * 4,
+      Math.cos(tEff * 0.43) * 1.8
     );
   }
 
@@ -1120,6 +1170,9 @@ export class PlayCanvasWorld {
     if (opacity < 1 || blendType !== pc.BLEND_NONE) {
       mat.blendType = blendType;
       mat.opacity = opacity;
+    }
+    if (blendType === pc.BLEND_ADDITIVE) {
+      mat.useFog = false;
     }
     mat.update();
     return mat;

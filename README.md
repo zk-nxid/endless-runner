@@ -1,6 +1,6 @@
-# Neon Runner (Three.js + PlayCanvas)
+# ORBS Runner (Three.js + PlayCanvas)
 
-Browser-based neon endless runner. The 3D world (track, neon obstacles, cinematic sky, lights, fog) is rendered with **PlayCanvas Engine 2.x**, while the **player avatar** is rendered with **Three.js** on a transparent canvas overlay above. Both engines share an engine-agnostic camera state for perfect lockstep.
+Browser-based endless runner with a neon cyber aesthetic. The 3D world (track, neon obstacles, cinematic sky, lights, fog) is rendered with **PlayCanvas Engine 2.x**, while the **player avatar** is rendered with **Three.js** on a transparent canvas overlay above. Both engines share an engine-agnostic camera state for perfect lockstep.
 
 ## Run Locally
 

@@ -10,6 +10,7 @@ export class UiSystem {
     this.scoreValue = document.getElementById("score-value");
     this.speedValue = document.getElementById("speed-value");
     this.finalScore = document.getElementById("final-score");
+    this.gameOverHighScore = document.getElementById("gameover-high-score");
     this.leaderboardList = document.getElementById("leaderboard-list");
     this.uiLayer = document.getElementById("ui-layer");
     this.scorePopups = document.getElementById("score-popups");
@@ -63,6 +64,9 @@ export class UiSystem {
     this.endCoinsLine = document.getElementById("end-coins-line");
     this.endCoinsEarned = document.getElementById("end-coins-earned");
     this.endCoinsTotal = document.getElementById("end-coins-total");
+    this.endRunnerSigRow = document.getElementById("end-runner-sig-row");
+    this.playerNameInput = document.getElementById("player-name");
+    this.poweredByStrip = document.getElementById("powered-by-strip");
 
     this._scoreCountUp = null;
     this._activePopups = [];
@@ -107,6 +111,9 @@ export class UiSystem {
     this.menuSettingsButton?.classList.toggle("hidden", state !== GAME_STATES.MENU);
     this.endSettingsButton?.classList.toggle("hidden", state !== GAME_STATES.END);
     this.shopButton?.classList.toggle("hidden", state !== GAME_STATES.MENU);
+    const playing = state === GAME_STATES.PLAYING;
+    this.poweredByStrip?.classList.toggle("hidden", playing);
+    this.poweredByStrip?.setAttribute("aria-hidden", playing ? "true" : "false");
     // Always close modals on state change to avoid stuck overlays.
     this.setPaused(false);
     this.setSettingsOpen(false);
@@ -277,6 +284,33 @@ export class UiSystem {
         "aria-label",
         signedIn && labelText.length ? `Account · ${labelText}` : "Account"
       );
+    }
+  }
+
+  /**
+   * Show guest handle row only when game-over is visible and player is signed out.
+   * @param {{ getSignedInPreview?: () => unknown } | null} authSync
+   * @param {string} gameState
+   */
+  syncGameOverLeaderboardControls(authSync, gameState) {
+    const inp = this.playerNameInput ?? document.getElementById("player-name");
+    const row = this.endRunnerSigRow;
+    if (!inp || !row) return;
+    const onEndScreen = gameState === GAME_STATES.END;
+    const signedIn =
+      typeof authSync?.getSignedInPreview === "function" &&
+      authSync.getSignedInPreview() != null;
+    const showGuestSig = onEndScreen && !signedIn;
+    row.classList.toggle("hidden", !showGuestSig);
+    row.setAttribute("aria-hidden", showGuestSig ? "false" : "true");
+    if (onEndScreen && signedIn) {
+      inp.value = "";
+      inp.disabled = true;
+      inp.tabIndex = -1;
+    } else {
+      inp.disabled = false;
+      inp.removeAttribute("disabled");
+      if (inp.tabIndex === -1) inp.removeAttribute("tabindex");
     }
   }
 
@@ -535,8 +569,10 @@ export class UiSystem {
     this.speedValue.textContent = speed.toFixed(1);
   }
 
-  updateGameOver(score) {
-    this.finalScore.textContent = String(score);
+  setGameOverHighScore(value) {
+    if (this.gameOverHighScore) {
+      this.gameOverHighScore.textContent = String(value);
+    }
   }
 
   /** Animates final score from 0 -> target after game over. */

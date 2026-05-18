@@ -53,4 +53,9 @@ export class SpawnerSystem {
     this.nextSpawnZ = -25;
     this.nextBoostZ = -42;
   }
+
+  rebaseZ(delta) {
+    this.nextSpawnZ += delta;
+    this.nextBoostZ += delta;
+  }
 }

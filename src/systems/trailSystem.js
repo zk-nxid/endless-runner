@@ -86,6 +86,16 @@ export class TrailSystem {
     this.#syncGeometry();
   }
 
+  /** Shift stored samples when the world origin is rebased on Z. */
+  rebaseZ(delta) {
+    if (!delta) return;
+    for (const p of this._points) {
+      p.z += delta;
+    }
+    if (this._lastSample) this._lastSample.z += delta;
+    this.#syncGeometry();
+  }
+
   setRunActive(active) {
     if (!active) {
       this._runActive = false;

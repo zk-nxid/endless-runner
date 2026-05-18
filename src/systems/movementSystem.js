@@ -59,6 +59,11 @@ export class MovementSystem {
     return { x: this.simX, y: this.simY, z: this.forwardZ };
   }
 
+  /** Floating origin: add positive delta so Z stays in a numerically stable band. */
+  rebaseZ(delta) {
+    this.forwardZ += delta;
+  }
+
   interpolate(previous, alpha) {
     this.renderX = previous.x + (this.simX - previous.x) * alpha;
     this.renderY = previous.y + (this.simY - previous.y) * alpha;

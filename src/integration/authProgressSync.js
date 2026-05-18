@@ -1,4 +1,5 @@
 import { getSupabaseClient, isSupabaseConfigured } from "./supabaseClient.js";
+import { GAME_TITLE } from "../core/constants.js";
 
 /**
  * Supabase Auth only: sign-in, profile, session UI.
@@ -54,7 +55,7 @@ export class AuthProgressSync {
   async init() {
     if (!isSupabaseConfigured()) {
       console.info(
-        "[Neon Runner] Supabase auth is off: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local (see .env.example), save, then restart the Vite dev server."
+        `[${GAME_TITLE}] Supabase auth is off: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local (see .env.example), save, then restart the Vite dev server.`
       );
       return;
     }

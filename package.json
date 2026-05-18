@@ -1,12 +1,13 @@
 {
-  "name": "neon-runner",
+  "name": "orbs-runner",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Browser-based neon endless runner rendered with PlayCanvas (world) and Three.js (player overlay).",
+  "description": "ORBS Runner — browser-based neon endless runner (PlayCanvas world + Three.js avatar overlay).",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/check-vercel-supabase-env.mjs",
+    "favicon": "node scripts/embed-favicon-svg.mjs",
+    "prebuild": "node scripts/check-vercel-supabase-env.mjs && node scripts/embed-favicon-svg.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

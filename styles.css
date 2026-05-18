@@ -540,20 +540,481 @@ button:hover {
 }
 
 /* ---------- Game over ---------- */
-.end-vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at center,
-    transparent 30%,
-    rgba(255, 70, 110, 0.18) 65%,
-    rgba(40, 4, 12, 0.55) 100%);
-  pointer-events: none;
-  animation: endVignettePulse 2.4s ease-in-out infinite;
+.bsod-corner.corner-icon,
+.bsod-corner.corner-account {
+  z-index: 40;
+  border-color: rgba(173, 216, 255, 0.45);
+  background: rgba(0, 32, 90, 0.55);
+  color: rgba(230, 244, 255, 0.96);
 }
 
-@keyframes endVignettePulse {
-  0%, 100% { opacity: 0.7; }
-  50% { opacity: 1; }
+.bsod-corner.corner-icon:hover,
+.bsod-corner.corner-account:hover {
+  border-color: var(--neon-cyan);
+  background: rgba(0, 50, 120, 0.75);
+  box-shadow: 0 0 14px rgba(81, 217, 255, 0.4);
+}
+
+#gameover-screen.bsod-screen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
+  place-content: unset;
+  justify-items: unset;
+  gap: 0;
+  padding: 0;
+  background: #0000cd;
+  backdrop-filter: none;
+  isolation: isolate;
+  z-index: 35;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#gameover-screen.bsod-screen:not(.visible) .bsod-main,
+#gameover-screen.bsod-screen:not(.visible) .bsod-backdrop {
+  animation: none;
+}
+
+#gameover-screen.bsod-screen.visible {
+  animation: bsodReveal 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+#gameover-screen.bsod-screen.hidden {
+  /* Override display:flex from #gameover-screen.bsod-screen — otherwise invisible layer
+     stays on top (z-index: 35) and eats all clicks on menu / hud. */
+  display: none;
+  pointer-events: none;
+  opacity: 0;
+}
+
+@keyframes bsodReveal {
+  from {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.bsod-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bsod-scanlines {
+  position: absolute;
+  inset: -4%;
+  background: repeating-linear-gradient(
+    transparent 0 2px,
+    rgba(0, 0, 32, 0.16) 2px 3px
+  );
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+  animation: bsodScanDrift 7s linear infinite;
+}
+
+.bsod-glitch-overlay {
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(255, 91, 183, 0.85), transparent 38%),
+    radial-gradient(circle at 82% 70%, rgba(81, 217, 255, 0.75), transparent 42%);
+  mix-blend-mode: screen;
+  animation: bsodGlitchHue 14s ease-in-out infinite alternate;
+}
+
+@keyframes bsodScanDrift {
+  from { transform: translateY(0); }
+  to { transform: translateY(12px); }
+}
+
+@keyframes bsodGlitchHue {
+  from { opacity: 0.03; filter: hue-rotate(-6deg); }
+  to { opacity: 0.07; filter: hue-rotate(10deg); }
+}
+
+.bsod-main {
+  position: relative;
+  z-index: 1;
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  padding:
+    max(4.5rem, env(safe-area-inset-top, 0px) + 3.25rem)
+    max(1.75rem, env(safe-area-inset-right, 0px))
+    max(2rem, env(safe-area-inset-bottom, 0px))
+    max(1.75rem, env(safe-area-inset-left, 0px));
+  text-align: left;
+  animation: bsodPanelSnap 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+#gameover-screen.bsod-screen.visible .bsod-main {
+  animation-name: bsodPanelSnap;
+}
+
+@keyframes bsodPanelSnap {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    clip-path: inset(0 0 100% 0);
+    filter: blur(2px);
+  }
+  40% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.bsod-sad {
+  margin: 0 0 0.35rem;
+  font-size: clamp(3.25rem, 11vw, 5.25rem);
+  line-height: 1;
+  font-weight: 700;
+  font-family: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  letter-spacing: 0.02em;
+  color: rgba(244, 252, 255, 0.96);
+  text-shadow:
+    2px 0 0 rgba(255, 91, 183, 0.22),
+    -2px 0 0 rgba(81, 217, 255, 0.18);
+}
+
+.bsod-title {
+  margin: 0.5rem 0 0;
+  font-size: clamp(0.95rem, 2.8vw, 1.18rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: rgba(244, 250, 255, 0.98);
+  text-shadow:
+    0 0 1px rgba(0, 0, 0, 0.95),
+    0 0 12px rgba(81, 217, 255, 0.28);
+  text-transform: none;
+}
+
+.bsod-preamble {
+  margin: 1rem 0 0;
+  max-width: 52rem;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  letter-spacing: 0.02em;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: rgba(210, 228, 255, 0.82);
+}
+
+.bsod-headline {
+  margin: 0.75rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.06em;
+  color: rgba(230, 244, 255, 0.94);
+}
+
+.glitch-text {
+  position: relative;
+}
+
+.glitch-text::before,
+.glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+.glitch-text::before {
+  color: var(--neon-magenta);
+  mix-blend-mode: screen;
+  opacity: 0.45;
+  transform: translate(-1px, 0);
+  animation: glitchA 6s steps(2) infinite;
+}
+
+.glitch-text::after {
+  color: var(--neon-cyan);
+  mix-blend-mode: screen;
+  opacity: 0.4;
+  transform: translate(1px, 0);
+  animation: glitchB 7s steps(2) infinite;
+}
+
+.bsod-code-block {
+  margin: 1rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px dashed rgba(200, 220, 255, 0.35);
+  max-width: min(52rem, 100%);
+}
+
+.bsod-line {
+  margin: 0.42rem 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  letter-spacing: 0.06em;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.bsod-line.muted {
+  color: rgba(200, 220, 248, 0.58);
+}
+
+.bsod-prop {
+  color: rgba(255, 91, 183, 0.95);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-right: 0.5rem;
+}
+
+.bsod-val {
+  color: rgba(230, 244, 255, 0.92);
+}
+
+.bsod-stats {
+  margin: 1rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(173, 216, 255, 0.28);
+  max-width: min(52rem, 100%);
+}
+
+.bsod-stat-row {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: baseline;
+  column-gap: 0.65rem;
+  gap: 0.35rem 0.65rem;
+  margin: 0.5rem 0;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.04em;
+  font-size: 0.82rem;
+  color: rgba(210, 232, 255, 0.9);
+}
+
+.bsod-stat-row dt {
+  font-weight: 600;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.bsod-stat-row dd {
+  margin: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.bsod-score {
+  font-weight: 800;
+  font-size: clamp(1.15rem, 4vw, 1.65rem);
+  color: var(--neon-warm);
+  text-shadow:
+    0 0 8px rgba(255, 91, 183, 0.45),
+    0 0 18px rgba(81, 217, 255, 0.35);
+}
+
+.bsod-score--dim {
+  color: rgba(255, 240, 200, 0.88);
+}
+
+.bsod-coins-line.bsod-coins-line,
+.bsod-main .end-coins-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1.1rem 0 0;
+  padding: 0.55rem 1rem;
+  gap: 0.5rem 1rem;
+  font-size: clamp(0.88rem, 2.8vw, 1.06rem);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-weight: 600;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: rgba(255, 245, 220, 0.96);
+  text-shadow:
+    0 0 10px rgba(255, 200, 100, 0.35),
+    0 0 22px rgba(81, 217, 255, 0.2);
+  text-align: left;
+  border: 1px solid rgba(173, 216, 255, 0.45);
+  border-radius: 4px;
+  background: rgba(4, 12, 40, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 20px rgba(81, 217, 255, 0.12);
+}
+
+.bsod-main .end-coins-line .end-coins-earned {
+  font-size: 1.05em;
+  font-weight: 800;
+}
+
+/* Keep this readout steady — pulsing earn line made the wallet line feel broken. */
+.bsod-main .end-coins-line:not(.zero) .end-coins-earned,
+.bsod-main .end-coins-line:not(.zero) .coin-icon {
+  animation: none;
+}
+
+.bsod-main .end-coins-line .end-coins-total {
+  margin: 0;
+  padding: 0.2rem 0 0.2rem 0.9rem;
+  margin-left: 0.15rem;
+  border-left: 1px solid rgba(173, 216, 255, 0.35);
+  font-size: 0.92em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: rgba(218, 234, 255, 0.88);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.bsod-main .end-coins-line .end-coins-total #end-coins-total {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-weight: 800;
+  font-size: 1.08em;
+  letter-spacing: 0.02em;
+  color: var(--neon-warm);
+  text-shadow: 0 0 10px rgba(255, 91, 183, 0.25);
+}
+
+.bsod-main .coin-icon {
+  font-size: 1.25em;
+  color: rgba(186, 230, 255, 1);
+  filter: drop-shadow(0 0 8px rgba(81, 217, 255, 0.45));
+}
+
+.bsod-main .end-coins-line.zero {
+  opacity: 0.88;
+}
+
+.bsod-main .end-coins-line.zero .end-coins-earned {
+  color: rgba(235, 240, 255, 0.78);
+}
+
+.bsod-user-row {
+  margin: 1rem 0 0;
+}
+
+.bsod-label {
+  display: block;
+  margin-bottom: 0.38rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.42em;
+  color: rgba(200, 226, 255, 0.65);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.bsod-input {
+  width: 100%;
+  max-width: min(28rem, 100%);
+  box-sizing: border-box;
+  padding: 0.5rem 0.62rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: 0.06em;
+  border: 1px solid rgba(173, 216, 255, 0.5);
+  background: rgba(0, 8, 32, 0.45);
+  color: rgba(244, 250, 255, 0.94);
+}
+
+.bsod-input::placeholder {
+  color: rgba(180, 200, 230, 0.45);
+}
+
+.bsod-input:focus {
+  outline: 2px solid var(--neon-cyan);
+  outline-offset: 1px;
+}
+
+.bsod-reboot-hint {
+  margin: 0.95rem 0 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: rgba(200, 226, 255, 0.72);
+}
+
+.bsod-kbd {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border: 1px solid rgba(230, 244, 255, 0.55);
+  background: rgba(0, 0, 40, 0.5);
+  font-size: 0.75em;
+  font-family: inherit;
+}
+
+.bsod-actions.end-actions {
+  margin-top: 1.1rem;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.bsod-primary.cta .cta-label {
+  letter-spacing: 0.1em;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-weight: 700;
+}
+
+.bsod-actions .bsod-secondary {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  padding: 0.45rem 0.82rem;
+  border: 1px solid rgba(173, 216, 255, 0.5);
+  background: rgba(0, 20, 64, 0.55);
+  color: rgba(236, 248, 255, 0.94);
+}
+
+.bsod-actions .bsod-secondary:hover {
+  border-color: var(--neon-magenta);
+  box-shadow: 0 0 12px rgba(255, 91, 183, 0.35);
+}
+
+.bsod-primary.cta {
+  border-radius: 0;
+}
+
+#leaderboard-list.bsod-leaderboard {
+  margin-top: 1.05rem;
+  padding-top: 0.62rem;
+  border-top: 1px dashed rgba(173, 216, 255, 0.28);
+  width: 100%;
+  max-width: min(52rem, 100%);
+  margin-inline: 0;
+  justify-items: start;
+}
+
+#leaderboard-list.bsod-leaderboard .leaderboard-row {
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  color: rgba(214, 234, 255, 0.88);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 .end-title {
@@ -1525,12 +1986,6 @@ button:hover {
     font-size: 1.1rem;
   }
 
-  /* Bottom stats strip sits here; lift ITX branding so it stays readable mid-run */
-  #app:has(#hud:not(.hidden)) .powered-by {
-    bottom: max(6.75rem, calc(env(safe-area-inset-bottom, 0px) + 5.75rem));
-    right: max(0.45rem, env(safe-area-inset-right, 0px));
-  }
-
   .corner-icon {
     top: max(0.35rem, env(safe-area-inset-top, 0px));
   }
@@ -1661,6 +2116,25 @@ button:hover {
     letter-spacing: 0.12em;
   }
 
+  #gameover-screen.bsod-screen .bsod-main {
+    padding-top: max(4rem, env(safe-area-inset-top, 0px) + 2.75rem);
+    padding-inline: max(1.1rem, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px));
+  }
+
+  #gameover-screen .bsod-main .end-coins-line {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .bsod-stat-row {
+    flex-wrap: wrap;
+    gap: 0.25rem 0.55rem;
+  }
+
+  .bsod-sad {
+    font-size: clamp(2.65rem, 16vw, 4.25rem);
+  }
+
   #leaderboard-list {
     width: 100%;
     max-width: min(360px, 100%);
@@ -1679,7 +2153,8 @@ button:hover {
 
   #ui-layer #gameover-screen .end-actions {
     gap: 0.32rem;
-    max-width: min(17.5rem, 100%);
+    max-width: 100%;
+    justify-content: flex-start;
   }
 
   #ui-layer #gameover-screen .end-actions button {
@@ -1700,7 +2175,8 @@ button:hover {
     font-size: 0.58rem;
     letter-spacing: 0.06em;
     gap: 0.18rem;
-    max-width: min(320px, 100%);
+    max-width: 100%;
+    margin-inline: 0;
   }
 
   #ui-layer #gameover-screen .leaderboard-row {

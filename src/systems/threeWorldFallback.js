@@ -169,6 +169,15 @@ export class ThreeWorldFallback {
     }
   }
 
+  /** Floating origin: keep void-rain debris in sync with rebased sim Z. */
+  rebaseWorldZ(delta) {
+    if (!delta || !this.voidRain?.length) return;
+    for (const entry of this.voidRain) {
+      const g = entry.group;
+      g.position.z += delta;
+    }
+  }
+
   #buildGround() {
     const mat = new THREE.MeshStandardMaterial({
       color: this.theme.palette.groundColor,

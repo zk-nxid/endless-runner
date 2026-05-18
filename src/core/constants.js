@@ -4,6 +4,12 @@ export const GAME_STATES = {
   END: "end",
 };
 
+/** Display name used in menus, HUD copy, docs, and error strings. */
+export const GAME_TITLE = "ORBS Runner";
+
+/** Persisted via localStorage alongside other `nr.*` keys */
+export const HIGH_SCORE_STORAGE_KEY = "nr.highScore";
+
 export const CONFIG = {
   laneCount: 3,
   laneWidth: 2.2,
@@ -29,6 +35,13 @@ export const CONFIG = {
     stateTransitionBoost: 0.22,
     falloffPerSecond: 0.55,
   },
+  /**
+   * Periodically shift all world Z by +worldZRebaseSnap once body.z passes this
+   * (player runs in -Z). Avoids float32 precision loss and black sky/glitches
+   * on long runs (very high score).
+   */
+  worldZRebaseThreshold: -2000,
+  worldZRebaseSnap: 2200,
   jump: {
     velocity: 8.6,
     gravity: 24,

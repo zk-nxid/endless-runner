@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { CONFIG, GAME_STATES } from "./constants.js";
+import { CONFIG, GAME_STATES, GAME_TITLE, HIGH_SCORE_STORAGE_KEY } from "./constants.js";
 import { SeededRng } from "./rng.js";
 import { InputSystem } from "../systems/inputSystem.js";
 import { MovementSystem } from "../systems/movementSystem.js";
@@ -46,6 +46,8 @@ export class Game {
     this.frameTimes = [];
     /** @type {{ kind: 'skin' | 'trail'; id: string } | null} */
     this._shopPendingPurchase = null;
+    /** True after a successful leaderboard submit this run — reset in #startRun. */
+    this.leaderboardArchivedThisRun = false;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, 1, 0.1, 300);
@@ -159,12 +161,13 @@ export class Game {
     try {
       await this.authSync.init();
     } catch (e) {
-      console.warn("Neon Runner: auth init failed", e);
+      console.warn(`${GAME_TITLE}: auth init failed`, e);
     }
   }
 
   refreshAuthUi() {
     this.ui.renderAuthSync?.(this.authSync);
+    this.ui.syncGameOverLeaderboardControls?.(this.authSync, this.state);
   }
 
   refreshShopAndCoinsUi() {
@@ -413,31 +416,49 @@ export class Game {
     retryButton.addEventListener("click", () => this.#startRun());
     endMenuButton?.addEventListener("click", () => this.#quitToMenu());
 
+    window.addEventListener("keydown", (event) => {
+      if (event.repeat) return;
+      const key = event.key?.toLowerCase?.() ?? "";
+      if (key !== "r") return;
+      if (this.state !== GAME_STATES.END) return;
+      const ae = /** @type {HTMLElement | null} */ (document.activeElement);
+      if (ae?.id === "player-name" || ae?.isContentEditable) return;
+      event.preventDefault();
+      this.#startRun();
+    });
+
     const submitScore = async () => {
+      if (this.leaderboardArchivedThisRun) return;
       if (!submitButton || submitButton.disabled) return;
-      const fromAuth = this.authSync.getLeaderboardHandle?.();
-      const typed = (nameInput?.value ?? "").trim();
+
+      const signedIn = this.authSync.getSignedInPreview?.() != null;
+      const fromAuth = signedIn ? (this.authSync.getLeaderboardHandle?.() ?? "") : "";
+      const typed = signedIn ? "" : String(nameInput?.value ?? "").trim();
       const name =
-        fromAuth != null && fromAuth.length > 0
-          ? fromAuth
-          : typed.length > 0
-            ? typed.slice(0, 18)
-            : "Player";
+        signedIn ? (fromAuth.length > 0 ? fromAuth : "Player") : typed.length > 0 ? typed.slice(0, 18) : "Player";
+
       submitButton.disabled = true;
-      submitButton.textContent = "Logging...";
+      submitButton.textContent = "logging…";
+      let archivedOk = false;
       try {
         await this.leaderboard.submit({ name, score: this.score });
         const top = await this.leaderboard.getTop();
         this.ui.renderLeaderboard(top);
-        submitButton.textContent = "Logged";
+        archivedOk = true;
+        this.leaderboardArchivedThisRun = true;
+        submitButton.textContent = "★ Score archived";
       } catch (err) {
         console.warn("Leaderboard submit failed", err);
-        submitButton.textContent = "Try Again";
+        submitButton.textContent = "retry log";
       } finally {
+        if (archivedOk) {
+          submitButton.disabled = true;
+          return;
+        }
         setTimeout(() => {
-          if (!submitButton) return;
+          if (!submitButton || this.leaderboardArchivedThisRun) return;
           submitButton.disabled = false;
-          submitButton.textContent = "Log Score";
+          submitButton.textContent = "★ Log score to archive";
         }, 900);
       }
     };
@@ -768,8 +789,10 @@ export class Game {
 
   #startRun() {
     this.#clearShopPendingPurchase();
+    this.leaderboardArchivedThisRun = false;
     this.state = GAME_STATES.PLAYING;
     this.ui.renderState(this.state);
+    this.ui.syncGameOverLeaderboardControls?.(this.authSync, this.state);
     this.ui.flashTransition();
     this.score = 0;
     this._scoreAccum = 0;
@@ -792,7 +815,7 @@ export class Game {
     const submitBtn = document.getElementById("submit-score-button");
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = "Log Score";
+      submitBtn.textContent = "★ Log score to archive";
     }
 
     this.movement = new MovementSystem();
@@ -861,18 +884,21 @@ export class Game {
       o.active = false;
     });
     this.ui.renderState(this.state);
+    this.ui.syncGameOverLeaderboardControls?.(this.authSync, this.state);
   }
 
   #endRun() {
     this.state = GAME_STATES.END;
     this.timeScale = 1;
     this.targetTimeScale = 1;
+    const highScore = this.#persistPersonalHighScore(this.score);
     const earnedCoins = Math.floor(this.score / 1000);
     if (earnedCoins > 0) {
       this.shop.addCoins(earnedCoins);
     }
     const totalCoins = this.shop.getCoins();
     this.ui.renderState(this.state);
+    this.ui.setGameOverHighScore(highScore);
     this.refreshAuthUi();
     this.ui.startScoreCountUp(this.score);
     this.ui.showEndCoins?.(earnedCoins, totalCoins);
@@ -953,6 +979,7 @@ export class Game {
     this.cameraSystem.update(body, wallSeconds, { boostActive: this.speedBoostTimer > 0 });
     this.cameraSystem.applyToThree(this.camera);
 
+    this.world.advanceSkyDecor?.(wallSeconds);
     this.world.setCamera(this.cameraSystem.getState());
     this.world.syncObstacles(this.obstacles);
     this.world.setMoodIntensity(this.moodIntensity, this.paletteShift);
@@ -988,6 +1015,50 @@ export class Game {
     }
   }
 
+  /**
+   * Rebase all runner-axis Z by +snap when the body passes a threshold, so world
+   * coordinates stay in a range that stays stable in float32 (fixes black sky / rendering past ~50k+ score).
+   */
+  #applyWorldZRebase() {
+    const th = CONFIG.worldZRebaseThreshold;
+    const snap = CONFIG.worldZRebaseSnap;
+    while (this.movement.getBodyPosition().z <= th) {
+      this.movement.rebaseZ(snap);
+      this.previousBody.z += snap;
+      for (const o of this.obstacles) {
+        if (o.active) o.z += snap;
+      }
+      this.spawner.rebaseZ(snap);
+      this.cameraSystem.rebaseZ(snap);
+      this.trailSystem?.rebaseZ(snap);
+      this.world.rebaseWorldZ?.(snap);
+    }
+  }
+
+  #readStoredHighScore() {
+    try {
+      const raw = localStorage.getItem(HIGH_SCORE_STORAGE_KEY);
+      const v = raw == null ? 0 : Number(raw);
+      return Number.isFinite(v) ? v : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** @returns Updated best-of-all-runs stored value (>= score). */
+  #persistPersonalHighScore(score) {
+    const prev = this.#readStoredHighScore();
+    const next = Math.max(prev, score);
+    if (next > prev) {
+      try {
+        localStorage.setItem(HIGH_SCORE_STORAGE_KEY, String(next));
+      } catch (_) {
+        /* ignore quota / privacy mode */
+      }
+    }
+    return next;
+  }
+
   #simulate(deltaSeconds) {
     const commands = this.input.consume();
     commands.forEach((cmd) => {
@@ -1003,6 +1074,7 @@ export class Game {
       1 + (this.speedBoostTimer > 0 ? CONFIG.boost.speedMultiplier : 0);
     const effectiveSpeed = this.difficulty.speed * speedMultiplier;
     this.movement.tick(deltaSeconds, effectiveSpeed);
+    this.#applyWorldZRebase();
 
     const player = this.movement.getBodyPosition();
     this.spawner.tick(player.z, effectiveSpeed, this.obstacles, (spawn) => this.#activateObstacle(spawn));

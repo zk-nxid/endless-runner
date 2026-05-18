@@ -89,6 +89,12 @@ export class CameraSystem {
     return this.state;
   }
 
+  /** Match floating-origin shifts applied to the player (keeps smoothing coherent). */
+  rebaseZ(delta) {
+    this.state.position.z += delta;
+    this.state.lookAt.z += delta;
+  }
+
   applyToThree(camera) {
     camera.position.set(this.state.position.x, this.state.position.y, this.state.position.z);
     camera.lookAt(this.state.lookAt.x, this.state.lookAt.y, this.state.lookAt.z);

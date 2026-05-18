@@ -1,3 +1,4 @@
+import { GAME_TITLE } from "./core/constants.js";
 import { Game } from "./core/game.js";
 
 function showFatal(message, err) {
@@ -25,7 +26,7 @@ function run() {
   const game = new Game({ worldCanvas, avatarCanvas });
   game.start();
   void game.initCloudSave().catch((err) => {
-    console.warn("Neon Runner: auth init failed", err);
+    console.warn(`${GAME_TITLE}: auth init failed`, err);
   });
 }
 
@@ -33,7 +34,7 @@ function start() {
   try {
     run();
   } catch (err) {
-    showFatal("Neon Runner failed to start.", err);
+    showFatal(`${GAME_TITLE} failed to start.`, err);
   }
 }
 
